@@ -1,0 +1,97 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isDriver() {
+      return request.auth.token.role == 'driver';
+    }
+
+    function isOps() {
+      return request.auth.token.role == 'ops';
+    }
+    
+    function isAdmin() {
+      return request.auth.token.role == 'admin';
+    }
+
+    function isOrgMember(orgId) {
+      return request.auth.token.orgId == orgId;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User Profiles: Users can read their own profile. Admins/Ops can read any profile in their org.
+    match /users/{userId} {
+      allow get: if isOwner(userId) || ( (isOps() || isAdmin()) && isOrgMember(resource.data.orgId) );
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+    }
+    
+    // Drivers can only read/write documents where they are the owner and it matches their org.
+    function isDriverOwner(doc) {
+      return isDriver() && doc.driverId == request.auth.uid && isOrgMember(doc.orgId);
+    }
+    
+    // Ops/Admins can read any document in their org.
+    function canAdminRead(doc) {
+        return (isOps() || isAdmin()) && isOrgMember(doc.orgId);
+    }
+
+    // Trips: Drivers can read their own trips. Ops/Admins can read all trips in org.
+    match /trips/{tripId} {
+      allow get: if (isDriver() && resource.data.driverId == request.auth.uid && isOrgMember(resource.data.orgId)) || canAdminRead(resource.data);
+      allow list: if isOps() || isAdmin(); // List for ops console
+      // Trip updates are handled by backend functions
+      allow write: if false; 
+    }
+    
+    // Driver-specific data: shifts, incidents, tasks, etc.
+    match /driverShifts/{shiftId} {
+      allow read, write: if isDriverOwner(request.resource.data);
+      allow get: if canAdminRead(resource.data);
+    }
+    
+    match /driverIncidents/{incidentId} {
+      allow read, write: if isDriverOwner(request.resource.data);
+      allow get: if canAdminRead(resource.data);
+    }
+
+    match /driverTasks/{taskId} {
+      allow read, write: if isDriverOwner(request.resource.data);
+      allow get: if canAdminRead(resource.data);
+    }
+
+    match /driverDocs/{docId} {
+      // Drivers can only manage their own documents
+      allow read, write: if isDriverOwner(request.resource.data);
+      allow get: if canAdminRead(resource.data);
+    }
+
+    // Inspection Sessions
+    match /inspectionSessions/{sessionId} {
+      allow create: if isDriverOwner(request.resource.data);
+      allow update: if isDriverOwner(resource.data); // Driver can update their own session
+      allow get: if (isDriverOwner(resource.data)) || canAdminRead(resource.data);
+    }
+
+    // Expenses
+    match /driverExpenses/{expenseId} {
+      allow create: if isDriverOwner(request.resource.data);
+      allow get: if (isDriverOwner(resource.data)) || canAdminRead(resource.data);
+    }
+
+    // Messages
+    match /directMessages/{messageId} {
+      allow read, write: if request.auth.uid in resource.data.participants && isOrgMember(resource.data.orgId);
+    }
+  }
+}
