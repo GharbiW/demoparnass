@@ -270,7 +270,7 @@ const ApproveDialog = ({ open, onOpenChange, request, onApprove, drivers }: { op
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>
-                    <Button onClick={onApprove} disabled={isLoading || !!error || (suggestions && suggestions.replacements.length > 0 && !isFullySelected)}>
+                    <Button onClick={onApprove} disabled={Boolean(isLoading || error || (suggestions?.replacements?.length > 0 && !isFullySelected))}>
                         <CheckCircle className="mr-2" /> Approuver & Confirmer les Remplacements
                     </Button>
                 </DialogFooter>
