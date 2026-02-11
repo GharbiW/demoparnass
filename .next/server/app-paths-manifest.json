@@ -1,7 +1,0 @@
-{
-  "/(app)/conception/courses/page": "app/(app)/conception/courses/page.js",
-  "/(app)/conception/planning/page": "app/(app)/conception/planning/page.js",
-  "/(app)/conception/a-placer/page": "app/(app)/conception/a-placer/page.js",
-  "/(app)/conception/sup/page": "app/(app)/conception/sup/page.js",
-  "/(app)/conception/reporting/page": "app/(app)/conception/reporting/page.js"
-}
