@@ -87,3 +87,187 @@ export type Contract = {
   isSuspended: boolean;
   suspensionPeriods?: { start: string; end: string }[];
 };
+
+// Types for "A Placer" (Unassigned Courses) module
+// Ride = template récurrent, Course = instance datée d'un Ride
+export type Ride = {
+  id: string;
+  prestationId: string;
+  sequence: number; // Order in the prestation (1, 2, 3...)
+  startLocation: string;
+  endLocation: string;
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
+  estimatedDuration?: number; // minutes
+};
+
+export type Course = {
+  id: string; // Reference Course
+  rideId: string; // Reference to the Ride template
+  prestationId: string; // Reference Prestation
+  date: string; // YYYY-MM-DD - the day this course must be done
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
+  // Multi-destination support: a course can have multiple destinations
+  startLocation: string;
+  endLocation: string;
+  intermediateLocations?: string[]; // For multi-destination: [A, B, C, D]
+  // Assignment status
+  assignmentStatus: 'unassigned' | 'partial' | 'assigned';
+  assignedDriverId?: string;
+  assignedDriverName?: string;
+  assignedVehicleId?: string;
+  assignedVehicleImmat?: string;
+  tourneeId?: string; // If assigned to a tournée
+  tourneeNumber?: string; // Tournée number for display
+  // Constraints
+  isSensitive: boolean;
+  requiredVehicleType: 'Semi-remorque' | 'Caisse mobile' | 'Frigo' | 'ADR' | 'SPL' | 'VL';
+  requiredVehicleEnergy?: 'Diesel' | 'Gaz' | 'Électrique';
+  requiredVehicleEquipment?: string[]; // e.g., ['Remorque frigorifique', 'ADR']
+  requiredDriverType?: 'CM' | 'Polyvalent' | 'SPL' | 'VL';
+  requiredDriverSkills: ('ADR' | 'Aéroportuaire' | 'Habilitation sûreté')[];
+  // Reason for non-placement
+  nonPlacementReason: NonPlacementReason;
+  missingResource?: 'vehicle' | 'driver' | 'both';
+  constraintWarnings?: string[];
+  blockReason?: string;
+  // Planning-specific fields
+  client?: string; // Client name (denormalized for display)
+  prestationType?: 'régulière' | 'sup' | 'spot';
+  // Temporary modifications (Conception only)
+  temporaryModifications?: {
+    address?: string;
+    dates?: { start: string; end: string };
+    times?: { start: string; end: string };
+    validFrom?: string; // YYYY-MM-DD
+    validTo?: string; // YYYY-MM-DD
+    modifiedBy?: string;
+    modifiedAt?: string;
+  };
+  // Temporary cancellation
+  cancellation?: {
+    start: string; // YYYY-MM-DD
+    end: string; // YYYY-MM-DD
+    reason: 'demande_client' | 'operationnel_parnass' | 'empechement_exterieur';
+    delay?: '1j_avant' | 'plus_1j_avant' | 'annulation_sur_place';
+    comment: string;
+    cancelledBy?: string;
+    cancelledAt?: string;
+  };
+  // Loading code (1 per day per Course)
+  loadingCode?: string;
+  // Comments
+  comments?: Array<{
+    id: string;
+    text: string;
+    author: string;
+    timestamp: string;
+  }>;
+  // Subcontractor
+  subcontractorId?: string;
+  subcontractorName?: string;
+};
+
+export type NonPlacementReason = 
+  | 'nouvelle_prestation_reguliere'
+  | 'premiere_presta_nouveau_client'
+  | 'sup_client_existant'
+  | 'conducteur_absent'
+  | 'materiel_indisponible'
+  | 'prestation_modifiee'
+  | 'tournee_cassee'
+  | 'tournee_modifiee'
+  | 'rides_combines_sans_affectation';
+
+export type Prestation = {
+  id: string; // Reference Prestation (e.g., PRE-2023-001)
+  client: string;
+  codeArticle?: string;
+  type: 'régulière' | 'sup' | 'spot';
+  courses: Course[]; // All courses (rides) for this prestation
+  // Resource requirements (from first course, or aggregated)
+  requiredVehicleType: 'Semi-remorque' | 'Caisse mobile' | 'Frigo' | 'ADR' | 'SPL' | 'VL';
+  requiredVehicleEnergy?: 'Diesel' | 'Gaz' | 'Électrique';
+  requiredVehicleEquipment?: string[];
+  requiredDriverType?: 'CM' | 'Polyvalent' | 'SPL' | 'VL';
+  requiredDriverSkills: ('ADR' | 'Aéroportuaire' | 'Habilitation sûreté')[];
+  // Metadata
+  contractId?: string;
+  priority: number; // Higher = more urgent
+  hasSensitiveCourses: boolean;
+  // Week indicator
+  week: 'S+1' | 'S+2' | 'S+3' | 'S+4+';
+};
+
+// Legacy type for backward compatibility
+export type UnassignedCourse = Course;
+
+export type WeeklyAssignmentCount = {
+  chauffeurId: string;
+  trajetId: string; // Normalized trajet identifier (e.g., "Lyon->Paris->Marseille")
+  week: string; // YYYY-WW format
+  count: number;
+};
+
+export type AssignmentConstraintResult = {
+  allowed: boolean;
+  currentCount: number;
+  maxCount: number;
+  warning: boolean;
+  message?: string;
+};
+
+export type ResourceCompatibility = {
+  vehicleCompatible: boolean;
+  driverCompatible: boolean;
+  vehicleIssues: string[];
+  driverIssues: string[];
+  overallCompatible: boolean;
+};
+
+// ─── Planning Module Types ─────────────────────────────────────────────────
+
+export type Tournee = {
+  id: string;
+  number: string; // e.g., "T-001"
+  vehicleId: string;
+  vehicleImmat: string;
+  vehicleType: string;
+  vehicleEnergy?: string;
+  driverId?: string;
+  driverName?: string;
+  driverType?: string;
+  courses: Course[];
+  date: string; // YYYY-MM-DD
+  status: 'draft' | 'published' | 'in_progress' | 'completed';
+};
+
+export type PlanningHealthMetrics = {
+  absentDrivers: { type: string; count: number; impactedCourses: number }[];
+  unavailableVehicles: { count: number; impactedCourses: number };
+  coursesPlaced: number;
+  coursesTotal: number;
+  coursesSupToPlace: number;
+  coursesRegToPlace: number;
+  sensitivesToPlace: number;
+  modifications: { annulations: number; changements: number };
+  prestationsExpiring4Weeks: number;
+  alertsByLevel: { critical: number; warning: number; info: number };
+  driversOutOfAmplitude: { above: number; below: number };
+};
+
+export type PlanningVersion = {
+  id: string;
+  version: string; // e.g., "v1", "v2"
+  status: 'draft' | 'published';
+  createdAt: string;
+  createdBy: string;
+  publishedAt?: string;
+  publishedBy?: string;
+  tournees: Tournee[];
+};
+
+export type CancellationReason = 'demande_client' | 'operationnel_parnass' | 'empechement_exterieur';
+
+export type CancellationDelay = '1j_avant' | 'plus_1j_avant' | 'annulation_sur_place';

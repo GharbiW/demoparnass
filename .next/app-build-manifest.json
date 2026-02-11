@@ -1,9 +1,14 @@
 {
   "pages": {
-    "/page": [
+    "/(app)/conception/courses/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/page.js"
+      "static/chunks/app/(app)/conception/courses/page.js"
+    ],
+    "/(app)/layout": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(app)/layout.js"
     ],
     "/layout": [
       "static/chunks/webpack.js",
@@ -11,30 +16,40 @@
       "static/css/app/layout.css",
       "static/chunks/app/layout.js"
     ],
-    "/(app)/dashboard/page": [
+    "/(app)/conception/a-placer/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(app)/dashboard/page.js"
+      "static/chunks/app/(app)/conception/a-placer/page.js"
     ],
-    "/(app)/layout": [
+    "/(app)/design/requests/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(app)/layout.js"
+      "static/chunks/app/(app)/design/requests/page.js"
     ],
-    "/login/page": [
+    "/(app)/contracts/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/login/page.js"
+      "static/chunks/app/(app)/contracts/page.js"
     ],
-    "/(app)/commercial/campaigns/page": [
+    "/(app)/conception/sup/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(app)/commercial/campaigns/page.js"
+      "static/chunks/app/(app)/conception/sup/page.js"
     ],
-    "/(app)/commercial/page": [
+    "/(app)/conception/conducteurs/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(app)/commercial/page.js"
+      "static/chunks/app/(app)/conception/conducteurs/page.js"
+    ],
+    "/(app)/conception/reporting/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(app)/conception/reporting/page.js"
+    ],
+    "/(app)/conception/planning/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(app)/conception/planning/page.js"
     ]
   }
 }

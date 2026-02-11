@@ -58,12 +58,17 @@ const commercialMenuItems = [
   { href: '/commercial/campaigns', label: 'Campagnes', icon: Mails },
   { href: '/commercial', label: 'Clients', icon: Building },
   { href: '/commercial/facturation', label: 'Facturation', icon: FileText },
+  { href: '/contracts', label: 'Cahier des Charges', icon: FileSignature },
+  { href: '/design/requests', label: 'Prestations à planifier', icon: FileClock },
 ]
 
 const conceptionMenuItems = [
-    { href: '/contracts', label: 'Cahier des Charges', icon: FileSignature },
-    { href: '/design/requests', label: 'Prestations à planifier', icon: FileClock },
-    { href: '/planning', label: 'Planning', icon: GanttChartSquare },
+    { href: '/conception/planning', label: 'Planning Global', icon: GanttChartSquare },
+    { href: '/conception/a-placer', label: 'À Placer', icon: ClipboardList },
+    { href: '/conception/courses', label: 'Courses', icon: Route },
+    { href: '/conception/sup', label: 'Créer un SUP', icon: CalendarCheck },
+    { href: '/conception/conducteurs', label: 'Conducteurs', icon: Users2 },
+    { href: '/conception/reporting', label: 'Reporting', icon: LayoutDashboard },
 ]
 
 const exploitationMenuItems = [
@@ -127,6 +132,7 @@ export function SidebarNav() {
     if (href === '/conges') return pathname === '/conges';
     if (href === '/anomalies') return pathname === '/anomalies';
     if (href === '/planning') return pathname === '/planning';
+    if (href === '/conception/planning') return pathname === '/conception/planning';
     return pathname.startsWith(href);
   }
 

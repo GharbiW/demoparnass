@@ -52,7 +52,7 @@ export default function PlanningRequestsPage() {
             delivery: contract.destinationSite,
             contractId: contract.id,
         });
-        router.push(`/planning?${query.toString()}`);
+        router.push(`/conception/planning?${query.toString()}`);
     } else {
         // Here you would implement the logic to attach to an existing trip
         alert(`Logique de rattachement pour ${contract.id} à implémenter.`);

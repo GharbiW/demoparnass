@@ -1,4 +1,4 @@
-// File: C:\Users\wael\Documents\GitHub\parnassdemo\src\app\(app)\layout.tsx
+// File: C:\Users\wael\Documents\GitHub\demoparnass\src\app\(app)\layout.tsx
 import * as entry from '../../../../src/app/(app)/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

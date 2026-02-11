@@ -260,7 +260,7 @@ export function CreateTripDialog({ open, onOpenChange, defaultValues = {} }: Cre
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+            <DialogContent className="max-w-2xl max-h-[85vh] !overflow-hidden flex flex-col">
                 <DialogHeader>
                     <DialogTitle>Créer un nouveau trajet</DialogTitle>
                     <DialogDescription>Remplissez les détails manuellement ou utilisez l'IA pour une planification optimisée.</DialogDescription>
