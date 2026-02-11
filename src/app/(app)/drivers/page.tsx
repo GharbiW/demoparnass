@@ -101,8 +101,8 @@ export default function DriversPage() {
                         <TableCell>{driver.phone}</TableCell>
                         <TableCell>{driver.truck}</TableCell>
                         <TableCell>{driver.site}</TableCell>
-                        <TableCell><Badge variant={driver.scoreSecurite > 90 ? 'secondary' : 'outline'}>{driver.scoreSecurite}</Badge></TableCell>
-                        <TableCell><Badge variant={driver.scoreEco > 90 ? 'secondary' : 'outline'}>{driver.scoreEco}</Badge></TableCell>
+                        <TableCell><Badge variant={(driver.scoreSecurite ?? 0) > 90 ? 'secondary' : 'outline'}>{driver.scoreSecurite ?? '-'}</Badge></TableCell>
+                        <TableCell><Badge variant={(driver.scoreEco ?? 0) > 90 ? 'secondary' : 'outline'}>{driver.scoreEco ?? '-'}</Badge></TableCell>
                         <TableCell>
                             <Badge variant={getStatusVariant(driver.status)}>
                               {driver.status}

@@ -3,7 +3,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Vehicle, Driver, drivers, allTrips } from "@/lib/planning-data";
+import { drivers, allTrips } from "@/lib/planning-data";
+import type { Vehicle, Driver } from "@/lib/types";
 import { Trip } from "@/lib/types";
 import { addDays, differenceInDays, differenceInMinutes, format, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";

@@ -56,7 +56,7 @@ export function HomeClient() {
                   Vue Chauffeur
                 </Button>
                 <p className="pt-4 text-center text-sm text-muted-foreground">
-                  Votre rôle actuel est : <span className="font-bold">{claims?.role || 'Non défini'}</span>
+                  Votre rôle actuel est : <span className="font-bold">{String(claims?.role || 'Non défini')}</span>
                 </p>
               </CardContent>
             </Card>

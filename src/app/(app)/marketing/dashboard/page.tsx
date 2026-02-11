@@ -119,7 +119,7 @@ export default function MarketingDashboardPage() {
                   {renderJobs.slice(0, 4).map(job => (
                   <li key={job.id} className="flex items-center justify-between">
                       <div>
-                          <p className="font-medium">{job.title || job.name}</p>
+                          <p className="font-medium">{job.title || (job as any).name}</p>
                           <p className="text-xs text-slate-500 dark:text-slate-400">{job.type} &bull; {job.date}</p>
                       </div>
                       <div dangerouslySetInnerHTML={{ __html: getStatusChip(job.status) }} />

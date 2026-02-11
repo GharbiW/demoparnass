@@ -29,7 +29,7 @@ export const LiveTripRouting = ({ start, end }: LiveTripRoutingProps) => {
         styles: [{ color: 'blue', opacity: 0.7, weight: 5, dashArray: '10, 10' }]
       },
       createMarker: () => null, // Do not create start/end markers
-    }).addTo(map);
+    } as any).addTo(map);
 
     return () => {
       map.removeControl(routingControl);

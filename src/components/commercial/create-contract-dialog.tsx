@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
+import { fr } from "date-fns/locale";
 import { CalendarIcon } from "lucide-react";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -86,7 +87,7 @@ export function CreateContractDialog({ open, onOpenChange, onAddContract, client
             contractStart: format(data.contractStart, 'yyyy-MM-dd'),
             contractEnd: format(data.contractEnd, 'yyyy-MM-dd'),
         };
-        onAddContract(submissionData);
+        onAddContract(submissionData as any);
         form.reset();
         onOpenChange(false);
     }

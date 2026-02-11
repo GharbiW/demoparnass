@@ -39,7 +39,7 @@ function getLocationFromSite(site: string): string {
 }
 
 // Single-point trajets
-const singlePointCourses: UnassignedCourse[] = Array.from({ length: 15 }, (_, i) => {
+const singlePointCourses: any[] = Array.from({ length: 15 }, (_, i) => {
   const startSite = sample(sites);
   const endSite = sample(sites.filter(s => s !== startSite));
   const startLoc = getLocationFromSite(startSite);
@@ -94,7 +94,7 @@ const singlePointCourses: UnassignedCourse[] = Array.from({ length: 15 }, (_, i)
 });
 
 // Multi-point trajets (A -> B -> C)
-const multiPointCourses: UnassignedCourse[] = Array.from({ length: 12 }, (_, i) => {
+const multiPointCourses: any[] = Array.from({ length: 12 }, (_, i) => {
   const startSite = sample(sites);
   const midSite = sample(sites.filter(s => s !== startSite));
   const endSite = sample(sites.filter(s => s !== startSite && s !== midSite));
@@ -150,7 +150,7 @@ const multiPointCourses: UnassignedCourse[] = Array.from({ length: 12 }, (_, i) 
 });
 
 // Add a few courses with 3+ segments
-const complexMultiPointCourses: UnassignedCourse[] = Array.from({ length: 3 }, (_, i) => {
+const complexMultiPointCourses: any[] = Array.from({ length: 3 }, (_, i) => {
   const sitesList = [...sites].sort(() => Math.random() - 0.5).slice(0, 4);
   const locationsList = sitesList.map(site => getLocationFromSite(site));
   
@@ -179,7 +179,7 @@ const complexMultiPointCourses: UnassignedCourse[] = Array.from({ length: 3 }, (
   };
 });
 
-export const unassignedCourses: UnassignedCourse[] = [
+export const unassignedCourses: any[] = [
   ...singlePointCourses,
   ...multiPointCourses,
   ...complexMultiPointCourses,

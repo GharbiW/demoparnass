@@ -111,7 +111,7 @@ campaignDrivers.slice(0, 75).forEach((driver, i) => {
     endDate.setDate(endDate.getDate() + (durationWeeks * 7) - 1);
     
     const isOverloadRequest = driver.zone === 'Sud-Est' && driver.skill === 'SPL' && i < 10;
-    const status = isOverloadRequest ? 'pending' : sample(['pending', 'pending', 'pending', 'accepted', 'rejected', 'negotiate']);
+    const status = isOverloadRequest ? 'pending' as const : sample(['pending' as const, 'pending' as const, 'pending' as const, 'accepted' as const, 'rejected' as const, 'negotiate' as const]);
 
 
     campaignRequests.push({

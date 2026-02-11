@@ -24,8 +24,8 @@ export const vehicles: Vehicle[] = Array.from({ length: 30 }, (_, i) => {
     const vin = `VIN-DEMO-${String(i+1).padStart(3, '0')}`;
     const immatriculation = `XY-${String(i+1).padStart(3, '0')}-ZZ`;
     const site = sample(['Lyon', 'Paris', 'Marseille', 'Nantes', 'Lille', 'Bordeaux']);
-    const energie = sample(['Diesel', 'Gaz', 'Électrique']);
-    const statut = sample(['Disponible', 'En mission', 'En maintenance', 'En panne']);
+    const energie = sample(['Diesel', 'Gaz', 'Électrique'] as const);
+    const statut = sample(['Disponible', 'En mission', 'En maintenance', 'En panne'] as const);
     const dtcAlert = Math.random() > 0.7;
 
     return {

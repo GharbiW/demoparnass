@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Search, ThumbsUp, ThumbsDown, Copy, BookUser, PlusCircle, Settings, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";

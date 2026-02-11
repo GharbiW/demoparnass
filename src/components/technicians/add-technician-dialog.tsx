@@ -35,8 +35,8 @@ const formSchema = z.object({
 });
 
 export function AddTechnicianDialog({ open, onOpenChange, onAddTechnician }: AddTechnicianDialogProps) {
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const form = useForm<z.input<typeof formSchema>>({
+    resolver: zodResolver(formSchema) as any,
     defaultValues: {
       name: "",
       site: "Lyon",
@@ -48,7 +48,7 @@ export function AddTechnicianDialog({ open, onOpenChange, onAddTechnician }: Add
     },
   });
 
-  const onSubmit = (values: z.infer<typeof formSchema>) => {
+  const onSubmit = (values: any) => {
     onAddTechnician(values);
     onOpenChange(false);
     form.reset();

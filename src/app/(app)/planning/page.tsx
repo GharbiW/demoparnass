@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { ListFilter, Truck, Users, Calendar, GanttChartIcon, List, PlusCircle, Sparkles, ChevronDown } from "lucide-react";
 import { GanttChart } from "@/components/planning/gantt-chart";
-import { Trip } from "@/lib/planning-data";
+import { type Trip } from "@/lib/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarIcon } from "@/components/ui/calendar";
 import { addDays, format, startOfWeek } from "date-fns";
@@ -60,6 +60,10 @@ const aiProposals = [
   }
 ];
 
+type ViewMode = 'vehicles' | 'drivers';
+type DisplayMode = 'gantt' | 'list';
+type GanttRange = 'day' | 'week' | 'month';
+
 function PlanningPageContent() {
   const searchParams = useSearchParams()
   const { trips, vehicles, drivers } = useMockData();
@@ -93,17 +97,20 @@ function PlanningPageContent() {
     });
   }
 
-  const getGanttDateRange = () => {
+  const getGanttDateRange = (): { start: Date; end: Date } => {
     switch (ganttRange) {
-      case 'day':
-        return { start: date, end: date };
-      case 'week':
+      case 'week': {
         const start = startOfWeek(date, { locale: fr });
         return { start, end: addDays(start, 6) };
-      case 'month':
+      }
+      case 'month': {
         const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
         const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
         return { start: startOfMonth, end: endOfMonth };
+      }
+      case 'day':
+      default:
+        return { start: date, end: date };
     }
   }
   const ganttDates = getGanttDateRange();

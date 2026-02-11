@@ -234,3 +234,10 @@ export function validateAssignment(
 export function isMultiDestinationTrajet(course: Course): boolean {
   return (course.intermediateLocations?.length || 0) > 0;
 }
+
+/**
+ * Checks if a course is a multi-point trajet (has segments)
+ */
+export function isMultiPointTrajet(course: Course): boolean {
+  return (course.segments?.length || 0) > 1;
+}

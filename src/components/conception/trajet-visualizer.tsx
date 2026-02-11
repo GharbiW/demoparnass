@@ -22,8 +22,9 @@ export function TrajetVisualizer({
   showDetails = false,
   className 
 }: TrajetVisualizerProps) {
-  const isMultiPoint = course.segments.length > 1;
-  const allSegmentsSelected = selectedSegments.length === course.segments.length;
+  const segments = course.segments ?? [];
+  const isMultiPoint = segments.length > 1;
+  const allSegmentsSelected = selectedSegments.length === segments.length;
 
   return (
     <Card className={cn("w-full", className)}>
@@ -33,15 +34,15 @@ export function TrajetVisualizer({
           <span className="text-sm font-semibold">Trajet {isMultiPoint ? 'multi-points' : ''}</span>
           {isMultiPoint && (
             <Badge variant="outline" className="text-xs">
-              {course.segments.length} segments
+              {segments.length} segments
             </Badge>
           )}
         </div>
 
         <div className="space-y-3">
-          {course.segments.map((segment, index) => {
+          {segments.map((segment, index) => {
             const isSelected = selectedSegments.includes(segment.sequence);
-            const isLast = index === course.segments.length - 1;
+            const isLast = index === segments.length - 1;
 
             return (
               <div key={segment.id} className="relative flex items-start gap-2">
@@ -97,7 +98,7 @@ export function TrajetVisualizer({
               {course.codeArticle && (
                 <div><strong>Code article:</strong> {course.codeArticle}</div>
               )}
-              <div><strong>Date requise:</strong> {new Date(course.requiredDate).toLocaleDateString('fr-FR')}</div>
+              <div><strong>Date requise:</strong> {new Date(course.requiredDate ?? course.date).toLocaleDateString('fr-FR')}</div>
               {course.requiredStartTime && (
                 <div><strong>Heure de départ:</strong> {course.requiredStartTime}</div>
               )}

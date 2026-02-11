@@ -115,9 +115,9 @@ export default function PreTripInspectionPage() {
             <InspectionItem 
                 key={item.id} 
                 item={item} 
-                onStatusChange={(id, val) => handleStateChange(id, 'status', val)}
-                onCommentChange={(id, val) => handleStateChange(id, 'comment', val)}
-                onFileChange={(id, val) => handleStateChange(id, 'file', val)}
+                onStatusChange={(id: string, val: any) => handleStateChange(id, 'status', val)}
+                onCommentChange={(id: string, val: any) => handleStateChange(id, 'comment', val)}
+                onFileChange={(id: string, val: any) => handleStateChange(id, 'file', val)}
             />
         ))}
       </CardContent>

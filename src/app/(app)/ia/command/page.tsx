@@ -80,7 +80,7 @@ export default function CommandPage() {
     const [activeActions, setActiveActions] = useState(mockMessages[3].actions); // Show last actions by default
     const [activeSql, setActiveSql] = useState(mockMessages[1].sqlPreview); // Show last SQL by default
     const { toast } = useToast();
-    const role = 'dispatcher'; // 'analyst' to test disabled state
+    const role: string = 'dispatcher'; // 'analyst' to test disabled state
     
     const handleSend = () => {
         if (!input) return;
@@ -177,8 +177,8 @@ export default function CommandPage() {
                         <CardDescription>Actions suggérées par l'IA.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                         {activeActions.length === 0 && <p className="text-sm text-muted-foreground">Aucune action proposée.</p>}
-                         {activeActions.map((action, i) => (
+                         {(activeActions?.length ?? 0) === 0 && <p className="text-sm text-muted-foreground">Aucune action proposée.</p>}
+                         {activeActions?.map((action, i) => (
                              <Dialog key={i}>
                                 <div className="p-3 rounded-lg border bg-muted/30">
                                     <div className="flex justify-between items-center">
@@ -188,7 +188,7 @@ export default function CommandPage() {
                                     <p className="text-xs text-muted-foreground">{action.type}</p>
                                     <div className="flex justify-end gap-2 mt-3">
                                         <Button size="sm" variant="ghost"><Pencil className="mr-1"/>Modifier</Button>
-                                        <Button size="sm" variant="outline" onClick={() => setActiveActions(prev => prev.filter(a => a.payload.tripId !== action.payload.tripId))}><X className="mr-1"/>Ignorer</Button>
+                                        <Button size="sm" variant="outline" onClick={() => setActiveActions(prev => prev?.filter(a => a.payload.tripId !== action.payload.tripId))}><X className="mr-1"/>Ignorer</Button>
                                         {role === 'analyst' ? (
                                             <Button size="sm" disabled><Check className="mr-1"/>Exécuter</Button>
                                         ) : (

@@ -19,8 +19,8 @@ type Driver = {
     id: string | number;
     name: string;
     site: string;
-    scoreSecurite: number;
-    scoreEco: number;
+    scoreSecurite?: number;
+    scoreEco?: number;
 };
 
 interface LeaderboardTableProps {
@@ -40,10 +40,12 @@ export function LeaderboardTable({ drivers }: LeaderboardTableProps) {
     const [sortConfig, setSortConfig] = useState<{key: SortKey, direction: 'asc' | 'desc'}>({key: 'scoreSecurite', direction: 'desc'});
     
     const sortedDrivers = [...drivers].sort((a, b) => {
-        if (a[sortConfig.key] < b[sortConfig.key]) {
+        const aVal = a[sortConfig.key] ?? 0;
+        const bVal = b[sortConfig.key] ?? 0;
+        if (aVal < bVal) {
             return sortConfig.direction === 'asc' ? -1 : 1;
         }
-        if (a[sortConfig.key] > b[sortConfig.key]) {
+        if (aVal > bVal) {
             return sortConfig.direction === 'asc' ? 1 : -1;
         }
         return 0;
@@ -86,8 +88,8 @@ export function LeaderboardTable({ drivers }: LeaderboardTableProps) {
                         <TableCell>{driver.name}</TableCell>
                         <TableCell>{driver.site}</TableCell>
                         <TableCell className="text-right">
-                             <Badge variant={driver[sortConfig.key] > 90 ? 'secondary' : 'outline'}>
-                                {driver[sortConfig.key]}
+                             <Badge variant={(driver[sortConfig.key] ?? 0) > 90 ? 'secondary' : 'outline'}>
+                                {driver[sortConfig.key] ?? '-'}
                             </Badge>
                         </TableCell>
                     </TableRow>

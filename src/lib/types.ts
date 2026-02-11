@@ -21,6 +21,8 @@ export type Vehicle = {
   vin: string;
   site: string;
   status: 'Disponible' | 'En mission' | 'En maintenance' | 'En panne';
+  marque?: string;
+  modele?: string;
 };
 
 export type Driver = {
@@ -167,6 +169,36 @@ export type Course = {
   // Subcontractor
   subcontractorId?: string;
   subcontractorName?: string;
+  // Extended fields used by course-card and trajet-visualizer
+  type?: string;
+  codeArticle?: string;
+  requiredDate?: string;
+  requiredStartTime?: string;
+  deadline?: string;
+  segments?: Array<{
+    id: string;
+    sequence: number;
+    startLocation: string;
+    endLocation: string;
+    startTime: string;
+    endTime: string;
+    estimatedDuration?: number;
+    assignedDriverId?: string;
+    assignedVehicleId?: string;
+  }>;
+  assignedSegments?: number;
+};
+
+export type TrajetSegment = {
+  id: string;
+  sequence: number;
+  startLocation: string;
+  endLocation: string;
+  startTime: string;
+  endTime: string;
+  estimatedDuration?: number;
+  assignedDriverId?: string;
+  assignedVehicleId?: string;
 };
 
 export type NonPlacementReason = 

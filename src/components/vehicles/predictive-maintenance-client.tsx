@@ -58,8 +58,8 @@ export function PredictiveMaintenanceClient({ vin }: { vin: string }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const form = useForm<z.input<typeof formSchema>>({
+    resolver: zodResolver(formSchema) as any,
     defaultValues: {
       vehicleVin: vin,
       odometer: 125000,
@@ -80,7 +80,7 @@ export function PredictiveMaintenanceClient({ vin }: { vin: string }) {
     },
   });
 
-  const onSubmit = async (data: z.infer<typeof formSchema>) => {
+  const onSubmit = async (data: any) => {
     setIsLoading(true);
     setPrediction(null);
     setError(null);

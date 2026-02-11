@@ -33,10 +33,10 @@ export default function LongShortPage() {
         await new Promise(r => setTimeout(r, 2000)); // Simulate AI processing
 
         if (outputType === 'clips') {
-            setHighlights(marketingData.detectedHighlights[video.id] || []);
+            setHighlights((marketingData.detectedHighlights as any)[video.id] || []);
             toast({ title: "Moments forts détectés avec succès !" });
         } else {
-            setConcepts(marketingData.detectedCarouselConcepts[video.id] || []);
+            setConcepts((marketingData.detectedCarouselConcepts as any)[video.id] || []);
             toast({ title: "Concepts de carrousel extraits avec succès !" });
         }
         setProcessing(false);

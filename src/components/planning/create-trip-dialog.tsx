@@ -63,7 +63,7 @@ const getMockPlan = (): PlanTripOutput & { driver2Id?: string, relayPoint?: stri
     estimatedDistanceKm: 750,
     routeSummary: "Via A6, avec relais chauffeur",
     stops: [
-        { type: "Relais", location: "Aire de Beaune-Merceuil", estimatedTime: new Date("2024-08-03T12:30:00").toISOString() },
+        { type: "Autre" as const, location: "Aire de Beaune-Merceuil", estimatedTime: new Date("2024-08-03T12:30:00").toISOString() },
         { type: "Carburant", location: "Aire de Service de Nemours", estimatedTime: new Date("2024-08-03T15:00:00").toISOString() },
     ],
     reasoning: "Trajet long (>6h) nécessitant un relais. Chauffeur 1 (Dupont) part de Lyon. Chauffeur 2 (Bernard) prend le relais à Beaune car sa base (Paris) est proche de la destination finale. Le véhicule GNC est choisi pour son faible coût opérationnel."

@@ -20,7 +20,7 @@ interface CourseCardProps {
 
 export function CourseCard({ course, onAssign, compact = false }: CourseCardProps) {
   const isMultiPoint = isMultiPointTrajet(course);
-  const displayDate = format(new Date(course.requiredDate), "d MMM yyyy", { locale: fr });
+  const displayDate = course.requiredDate ? format(new Date(course.requiredDate), "d MMM yyyy", { locale: fr }) : format(new Date(course.date), "d MMM yyyy", { locale: fr });
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -53,15 +53,15 @@ export function CourseCard({ course, onAssign, compact = false }: CourseCardProp
           <div className="flex items-center gap-2 text-sm">
             <MapPin className="h-4 w-4 text-muted-foreground" />
             <span className="font-medium">
-              {course.segments[0].startLocation}
+              {course.segments?.[0]?.startLocation ?? course.startLocation}
             </span>
             <ArrowRight className="h-3 w-3 text-muted-foreground" />
             <span className="font-medium">
-              {course.segments[course.segments.length - 1].endLocation}
+              {course.segments?.[(course.segments?.length ?? 1) - 1]?.endLocation ?? course.endLocation}
             </span>
             {isMultiPoint && (
               <Badge variant="outline" className="text-xs ml-2">
-                +{course.segments.length - 1} étapes
+                +{(course.segments?.length ?? 1) - 1} étapes
               </Badge>
             )}
           </div>
@@ -135,7 +135,7 @@ export function CourseCard({ course, onAssign, compact = false }: CourseCardProp
         {/* Assignment status */}
         {course.assignmentStatus === 'partial' && (
           <Badge variant="outline" className="text-xs text-orange-600">
-            Assignation partielle ({course.assignedSegments?.length}/{course.segments.length} segments)
+            Assignation partielle ({course.assignedSegments ?? 0}/{course.segments?.length ?? 0} segments)
           </Badge>
         )}
       </CardContent>

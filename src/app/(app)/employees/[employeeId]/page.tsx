@@ -360,7 +360,7 @@ export default function EmployeeProfilePage() {
                         <SelectTrigger><SelectValue placeholder="Sélectionner un véhicule..." /></SelectTrigger>
                         <SelectContent>
                             {vehicles.map((v) => (
-                                <SelectItem key={v.vin} value={v.vin}>{v.immatriculation} ({v.marque} {v.modele})</SelectItem>
+                                <SelectItem key={v.vin} value={v.vin}>{v.immatriculation} ({v.marque ?? ''} {v.modele ?? ''})</SelectItem>
                             ))}
                         </SelectContent>
                     </Select>

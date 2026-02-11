@@ -19,8 +19,8 @@ import { Badge } from "@/components/ui/badge";
 import type { LeaveRequest } from "@/lib/types";
 
 const initialRequests: LeaveRequest[] = [
-    { id: 'CONGE-DRV-001', driverId: 'DRV-JDU-001', driverName: "Jean Dupont", site: "Lyon", driverType: 'SPL - Province', startDate: '2024-08-12', endDate: '2024-08-25', status: 'Approuvé' },
-    { id: 'CONGE-DRV-002', driverId: 'DRV-JDU-001', driverName: "Jean Dupont", site: "Lyon", driverType: 'SPL - Province', startDate: '2024-12-23', endDate: '2025-01-02', status: 'En attente' },
+    { id: 'CONGE-DRV-001', driverId: 'DRV-JDU-001', driverName: "Jean Dupont", site: "Lyon", driverType: 'SPL', startDate: '2024-08-12', endDate: '2024-08-25', status: 'Approuvé' },
+    { id: 'CONGE-DRV-002', driverId: 'DRV-JDU-001', driverName: "Jean Dupont", site: "Lyon", driverType: 'SPL', startDate: '2024-12-23', endDate: '2025-01-02', status: 'En attente' },
 ];
 
 export default function DriverCongesPage() {

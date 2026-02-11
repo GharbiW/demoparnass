@@ -49,7 +49,7 @@ export function WeeklyCapacityDashboard({ capacityNeeds, requests, onUpdateReque
     const uniqueZones = useMemo(() => ['all', ...Array.from(new Set(capacityNeeds.map(n => n.zone)))], [capacityNeeds]);
     const uniqueSkills = useMemo(() => ['all', ...Array.from(new Set(capacityNeeds.map(n => n.skill)))], [capacityNeeds]);
 
-    const handleOpenDialog = (item: ReturnType<typeof processData>[0]) => {
+    const handleOpenDialog = (item: any) => {
         setSelectedRequests(item.requests);
         setCurrentCapacity(item.capacity);
         setDialogTitle(`Demandes pour S${item.week} - ${item.zone} - ${item.skill}`);
