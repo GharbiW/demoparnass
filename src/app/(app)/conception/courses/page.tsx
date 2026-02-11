@@ -725,6 +725,12 @@ export default function CoursesPage() {
             onOpenChange={(open) => {
               if (!open) setSelectedCourse(null);
             }}
+            onSave={(updatedCourse) => {
+              // Update the course in the list
+              setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
+              setSelectedCourse(null);
+              toast({ title: "Course mise à jour", description: "Les modifications ont été enregistrées." });
+            }}
           />
         )}
       </div>
