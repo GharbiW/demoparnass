@@ -3,7 +3,7 @@
 
 import { useState } from "react"
 import { useForm, FormProvider } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
+import { zodResolver } from "@hookform/resolvers"
 import { z } from "zod"
 import { aiPoweredTripRiskAssessment, type AiPoweredTripRiskAssessmentInput, type AiPoweredTripRiskAssessmentOutput } from "@/ai/flows/ai-powered-trip-risk-assessment"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
