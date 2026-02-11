@@ -51,8 +51,10 @@ export default function CampaignDetailPage() {
     const clickedCount = Math.floor(campaign.recipientCount * (campaign.clickRate / 100));
     const convertedCount = Math.floor(clickedCount * 0.1); // 10% conversion rate of clicks
 
-    const getStatusVariant = (status: 'Nouveau' | 'Contacté' | 'En négociation') => {
+    const getStatusVariant = (status: string) => {
         if(status === 'Contacté') return 'secondary';
+        if(status === 'Gagné') return 'default';
+        if(status === 'Perdu') return 'destructive';
         return 'outline';
     }
 
