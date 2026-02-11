@@ -54,13 +54,12 @@ import Link from 'next/link'
 import Image from 'next/image'
 
 const commercialMenuItems = [
-<<<<<<< HEAD
-  { href: '/commercial/prospects', label: 'Prospection', icon: Contact },
-  { href: '/commercial/campaigns', label: 'Campagnes', icon: Mails },
-  { href: '/commercial', label: 'Clients', icon: Building },
-  { href: '/commercial/facturation', label: 'Facturation', icon: FileText },
-  { href: '/contracts', label: 'Cahier des Charges', icon: FileSignature },
-  { href: '/design/requests', label: 'Prestations à planifier', icon: FileClock },
+    { href: '/commercial/prospects', label: 'Prospection', icon: Contact },
+    { href: '/commercial/campaigns', label: 'Campagnes', icon: Mails },
+    { href: '/commercial', label: 'Clients', icon: Building },
+    { href: '/commercial/facturation', label: 'Facturation', icon: FileText },
+    { href: '/contracts', label: 'Cahier des Charges', icon: FileSignature },
+    { href: '/design/requests', label: 'Prestations à planifier', icon: FileClock },
 ]
 
 const conceptionMenuItems = [
@@ -70,19 +69,6 @@ const conceptionMenuItems = [
     { href: '/conception/sup', label: 'Créer un SUP', icon: CalendarCheck },
     { href: '/conception/conducteurs', label: 'Conducteurs', icon: Users2 },
     { href: '/conception/reporting', label: 'Reporting', icon: LayoutDashboard },
-=======
-    { href: '/commercial/prospects', label: 'Prospection', icon: Contact },
-    { href: '/commercial/campaigns', label: 'Campagnes', icon: Mails },
-    { href: '/commercial', label: 'Clients', icon: Building },
-    { href: '/commercial/facturation', label: 'Facturation', icon: FileText },
-]
-
-const conceptionMenuItems = [
-    { href: '/contracts', label: 'Cahier des Charges', icon: FileSignature },
-    { href: '/design/requests', label: 'Prestations à planifier', icon: FileClock },
-    { href: '/planning/unassigned', label: 'A Placer', icon: ClipboardList },
-    { href: '/planning', label: 'Planning', icon: GanttChartSquare },
->>>>>>> 6f0b684b815b9cb2940c7bfef9443abcc2eb5895
 ]
 
 const exploitationMenuItems = [
@@ -140,18 +126,6 @@ const autresMenuItems = [
 export function SidebarNav() {
     const pathname = usePathname()
 
-<<<<<<< HEAD
-  const isActive = (href: string) => {
-    // Exact match for some routes, otherwise startsWith
-    if (href === '/dashboard' || href === '/commercial' || href === '/contracts') return pathname === href;
-    if (href === '/drivers') return pathname.startsWith('/drivers') || pathname.startsWith('/chauffeurs');
-    if (href === '/conges') return pathname === '/conges';
-    if (href === '/anomalies') return pathname === '/anomalies';
-    if (href === '/planning') return pathname === '/planning';
-    if (href === '/conception/planning') return pathname === '/conception/planning';
-    return pathname.startsWith(href);
-  }
-=======
     const isActive = (href: string) => {
         // Exact match for some routes, otherwise startsWith
         if (href === '/dashboard' || href === '/commercial' || href === '/contracts') return pathname === href;
@@ -159,9 +133,9 @@ export function SidebarNav() {
         if (href === '/conges') return pathname === '/conges';
         if (href === '/anomalies') return pathname === '/anomalies';
         if (href === '/planning') return pathname === '/planning';
+        if (href === '/conception/planning') return pathname === '/conception/planning';
         return pathname.startsWith(href);
     }
->>>>>>> 6f0b684b815b9cb2940c7bfef9443abcc2eb5895
 
     return (
         <Sidebar>
