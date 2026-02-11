@@ -4,7 +4,7 @@
 
 import { useState } from "react"
 import { useForm, FormProvider } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { predictVehicleMaintenance, type PredictiveMaintenanceInput, type PredictiveMaintenanceOutput } from "@/ai/flows/predictive-maintenance"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"

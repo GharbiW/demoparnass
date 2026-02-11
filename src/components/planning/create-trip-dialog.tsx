@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useForm, FormProvider, useFieldArray, Controller } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon, Fuel, Coffee, Shield, Trash2, PlusCircle, Users, Wand2, Bot, Loader2, Sparkles, Flag, CheckCircle } from "lucide-react";

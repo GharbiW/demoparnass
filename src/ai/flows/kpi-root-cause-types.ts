@@ -31,7 +31,17 @@ export const KpiRootCauseInputSchema = z.object({
 });
 export type KpiRootCauseInput = z.infer<typeof KpiRootCauseInputSchema>;
 
-export const FactorSchema = z.object({
+export type Factor = {
+    id: string;
+    description: string;
+    impact: number;
+    reasoning: string;
+    category: "Comportement Chauffeur" | "Performance Véhicule" | "Conditions Externes" | "Planification" | "Maintenance" | "Économique" | "Réglementaire";
+    dataPoints?: string[];
+    subFactors?: Factor[];
+};
+
+export const FactorSchema: z.ZodType<Factor> = z.object({
     id: z.string().describe("A unique identifier for the factor, e.g., F-01."),
     description: z.string().describe("A concise description of the contributing factor."),
     impact: z.number().min(-100).max(100).describe("The estimated percentage impact of this factor on the KPI deviation. Positive for over-performance, negative for under-performance."),
@@ -40,7 +50,6 @@ export const FactorSchema = z.object({
     dataPoints: z.array(z.string()).optional().describe("Specific data points or examples supporting the reasoning, e.g., 'VIN-XYZ had 3 breakdowns'."),
     subFactors: z.array(z.lazy(() => FactorSchema)).optional().describe("A list of sub-factors that contribute to this main factor."),
 });
-export type Factor = z.infer<typeof FactorSchema>;
 
 export const KpiRootCauseOutputSchema = z.object({
     kpi: z.string().describe("The KPI that was analyzed."),

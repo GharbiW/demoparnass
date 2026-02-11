@@ -57,10 +57,10 @@ export default function ClientDetailPage() {
 
     const handleAddContract = (newContractData: Omit<Contract, 'id' | 'isSuspended'>) => {
         const newContract: Contract = {
+            ...newContractData,
             id: `CTR-${clientName.substring(0,3).toUpperCase()}-${String(clientContracts.length + 1).padStart(3, '0')}`,
             client: clientName,
             isSuspended: false,
-            ...newContractData,
         };
         mockDataService.addContract(newContract); 
         setContracts(prev => [...(prev || []), newContract]);
