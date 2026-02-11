@@ -52,7 +52,7 @@ interface CourseDetailDialogProps {
   course: Course | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (course: Course) => void;
+  onSave?: (course: Course) => void;
 }
 
 export function CourseDetailDialog({ course, open, onOpenChange, onSave }: CourseDetailDialogProps) {
@@ -136,7 +136,7 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave }: Cours
         cancelledAt: new Date().toISOString(),
       } : undefined,
     };
-    onSave(updatedCourse);
+    onSave?.(updatedCourse);
     setTimeout(() => {
       setSaving(false);
       onOpenChange(false);
