@@ -27,6 +27,7 @@ interface GanttViewProps {
   date: string; // YYYY-MM-DD
   zoomLevel: ZoomLevel;
   onCourseClick: (course: Course) => void;
+  startHour?: number; // 0 = midnight (default), 6 = start at 6:00
 }
 
 function timeToMinutes(time: string): number {
@@ -46,13 +47,14 @@ function getTotalWidth(zoomLevel: ZoomLevel): number {
   return minutesToPx(24 * 60, zoomLevel);
 }
 
-function getHourMarkers(zoomLevel: ZoomLevel) {
+function getHourMarkers(zoomLevel: ZoomLevel, startHour: number = 0) {
   const markers: { hour: number; label: string; offset: number }[] = [];
-  for (let h = 0; h < 24; h++) {
+  for (let i = 0; i < 24; i++) {
+    const h = (startHour + i) % 24;
     markers.push({
       hour: h,
       label: `${String(h).padStart(2, "0")}:00`,
-      offset: minutesToPx(h * 60, zoomLevel),
+      offset: minutesToPx(i * 60, zoomLevel),
     });
   }
   return markers;
@@ -60,24 +62,33 @@ function getHourMarkers(zoomLevel: ZoomLevel) {
 
 // ─── Course Block ─────────────────────────────────────────────────────────────
 
+function adjustMinutesForStartHour(minutes: number, startHour: number): number {
+  const offset = startHour * 60;
+  return (minutes - offset + 24 * 60) % (24 * 60);
+}
+
 function CourseBlock({
   course,
   zoomLevel,
   viewMode,
   onClick,
+  tournee,
+  startHour = 0,
 }: {
   course: Course;
   zoomLevel: ZoomLevel;
   viewMode: ViewMode;
   onClick: () => void;
+  tournee?: Tournee;
+  startHour?: number;
 }) {
-  const startMin = timeToMinutes(course.startTime);
-  const endMin = timeToMinutes(course.endTime);
-  const durationMin = Math.max(endMin - startMin, 30); // Min 30 min display
+  const startMin = adjustMinutesForStartHour(timeToMinutes(course.startTime), startHour);
+  const endMin = adjustMinutesForStartHour(timeToMinutes(course.endTime), startHour);
+  const durationMin = Math.max(endMin >= startMin ? endMin - startMin : (24 * 60 - startMin + endMin), 30); // Handle cross-midnight
   const left = minutesToPx(startMin, zoomLevel);
   const width = Math.max(minutesToPx(durationMin, zoomLevel), 40);
 
-  const isUnassigned = course.assignmentStatus !== "assigned";
+  const isUnassigned = course.assignmentStatus !== "affectee";
   const isSup = course.prestationType === "sup";
 
   const bgColor = isUnassigned
@@ -142,6 +153,14 @@ function CourseBlock({
             {isUnassigned && (
               <p className="text-xs text-rose-600 font-medium">Non affecté — {course.nonPlacementReason.replace(/_/g, ' ')}</p>
             )}
+            {tournee?.servicePickup && (
+              <div className="mt-2 pt-2 border-t border-emerald-200">
+                <p className="text-xs font-semibold text-emerald-700 mb-1">Prise de service</p>
+                <p className="text-xs"><strong>Lieu:</strong> {tournee.servicePickup.location}</p>
+                <p className="text-xs"><strong>Heure:</strong> {tournee.servicePickup.time}</p>
+                <p className="text-xs"><strong>Distance:</strong> {tournee.servicePickup.kmFromBase} km</p>
+              </div>
+            )}
           </div>
         </TooltipContent>
       </Tooltip>
@@ -151,9 +170,11 @@ function CourseBlock({
 
 // ─── Idle Segment (gap between courses) ───────────────────────────────────────
 
-function IdleSegment({ startMin, endMin, zoomLevel }: { startMin: number; endMin: number; zoomLevel: ZoomLevel }) {
-  const left = minutesToPx(startMin, zoomLevel);
-  const width = minutesToPx(endMin - startMin, zoomLevel);
+function IdleSegment({ startMin, endMin, zoomLevel, startHour = 0 }: { startMin: number; endMin: number; zoomLevel: ZoomLevel; startHour?: number }) {
+  const adjStart = adjustMinutesForStartHour(startMin, startHour);
+  const adjEnd = adjustMinutesForStartHour(endMin, startHour);
+  const left = minutesToPx(adjStart, zoomLevel);
+  const width = minutesToPx(adjEnd >= adjStart ? adjEnd - adjStart : (24 * 60 - adjStart + adjEnd), zoomLevel);
   if (width < 5) return null;
 
   return (
@@ -175,6 +196,8 @@ function ResourceRow({
   viewMode,
   onCourseClick,
   isDriverChange,
+  tournees,
+  startHour = 0,
 }: {
   resourceId: string;
   resourceLabel: string;
@@ -184,9 +207,16 @@ function ResourceRow({
   viewMode: ViewMode;
   onCourseClick: (course: Course) => void;
   isDriverChange?: boolean;
+  tournees?: Tournee[];
+  startHour?: number;
 }) {
   // Sort courses by start time
   const sorted = [...courses].sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+  // Find service pickup for this tournée (if courses share same tourneeId)
+  const tourneeId = sorted[0]?.tourneeId;
+  const tournee = tournees?.find(t => t.id === tourneeId || t.courses.some(c => c.id === sorted[0]?.id));
+  const servicePickup = tournee?.servicePickup;
 
   // Calculate idle segments
   const idleSegments: { startMin: number; endMin: number }[] = [];
@@ -221,8 +251,36 @@ function ResourceRow({
 
       {/* Timeline */}
       <div className="relative h-11 flex-1" style={{ minWidth: getTotalWidth(zoomLevel) }}>
+        {/* Service Pickup Block */}
+        {servicePickup && sorted.length > 0 && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div
+                  className="absolute h-7 rounded border-2 border-dashed border-emerald-400 bg-emerald-50/50 cursor-pointer hover:bg-emerald-100/50 transition-colors flex items-center gap-1 px-1.5 text-[9px] font-medium text-emerald-700"
+                  style={{
+                    left: `${minutesToPx(adjustMinutesForStartHour(timeToMinutes(servicePickup.time), startHour), zoomLevel)}px`,
+                    width: `${Math.max(minutesToPx(30, zoomLevel), 60)}px`,
+                    top: "0px",
+                  }}
+                >
+                  <MapPin className="h-2.5 w-2.5" />
+                  <span className="truncate">Prise service</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs p-2">
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold">Prise de service</p>
+                  <p className="text-xs"><strong>Lieu:</strong> {servicePickup.location}</p>
+                  <p className="text-xs"><strong>Heure:</strong> {servicePickup.time}</p>
+                  <p className="text-xs"><strong>Distance:</strong> {servicePickup.kmFromBase} km</p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
         {idleSegments.map((seg, i) => (
-          <IdleSegment key={i} startMin={seg.startMin} endMin={seg.endMin} zoomLevel={zoomLevel} />
+          <IdleSegment key={i} startMin={seg.startMin} endMin={seg.endMin} zoomLevel={zoomLevel} startHour={startHour} />
         ))}
         {sorted.map(course => (
           <CourseBlock
@@ -231,6 +289,8 @@ function ResourceRow({
             zoomLevel={zoomLevel}
             viewMode={viewMode}
             onClick={() => onCourseClick(course)}
+            tournee={tournee}
+            startHour={startHour}
           />
         ))}
       </div>
@@ -247,9 +307,10 @@ export function ConceptionGanttView({
   date,
   zoomLevel,
   onCourseClick,
+  startHour = 0,
 }: GanttViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const hourMarkers = useMemo(() => getHourMarkers(zoomLevel), [zoomLevel]);
+  const hourMarkers = useMemo(() => getHourMarkers(zoomLevel, startHour), [zoomLevel, startHour]);
   const totalWidth = getTotalWidth(zoomLevel);
 
   // Filter courses for the selected date
@@ -258,12 +319,32 @@ export function ConceptionGanttView({
   // Group by resource
   const resourceGroups = useMemo(() => {
     const groups: Map<string, { label: string; sub: string; courses: Course[] }> = new Map();
+    
+    // Create a map of tourneeId to tourneeCode for quick lookup
+    const tourneeCodeMap = new Map<string, string>();
+    tournees.forEach(t => {
+      if (t.id) tourneeCodeMap.set(t.id, t.tourneeCode);
+      // Also map by courses' tourneeId
+      t.courses.forEach(c => {
+        if (c.tourneeId) tourneeCodeMap.set(c.tourneeId, t.tourneeCode);
+      });
+    });
 
     if (viewMode === "vehicles") {
       // Group by vehicle (via tournee or directly)
       dayCourses.forEach(course => {
+        // Try to find tournee code from tournees data
+        const tourneeCode = course.tourneeId ? tourneeCodeMap.get(course.tourneeId) : undefined;
         const key = course.assignedVehicleId || course.tourneeId || `unassigned-${course.id}`;
-        const label = course.assignedVehicleImmat || course.tourneeNumber || "Non affecté";
+        
+        // Label: vehicle immat if available, otherwise tournee code, otherwise tournee number, otherwise "Non affecté"
+        let label = course.assignedVehicleImmat;
+        if (!label && tourneeCode) {
+          label = tourneeCode;
+        } else if (!label) {
+          label = course.tourneeNumber || "Non affecté";
+        }
+        
         const sub = course.requiredVehicleType + (course.requiredVehicleEnergy ? ` • ${course.requiredVehicleEnergy}` : "");
 
         if (!groups.has(key)) {
@@ -274,8 +355,17 @@ export function ConceptionGanttView({
     } else {
       // Group by driver
       dayCourses.forEach(course => {
-        const key = course.assignedDriverId || `unassigned-${course.id}`;
-        const label = course.assignedDriverName || "Non affecté";
+        const key = course.assignedDriverId || course.tourneeId || `unassigned-${course.id}`;
+        const tourneeCode = course.tourneeId ? tourneeCodeMap.get(course.tourneeId) : undefined;
+        
+        // Label: driver name if available, otherwise tournee code, otherwise "Non affecté"
+        let label = course.assignedDriverName;
+        if (!label && tourneeCode) {
+          label = tourneeCode;
+        } else if (!label) {
+          label = "Non affecté";
+        }
+        
         const sub = course.requiredDriverType || "N/A";
 
         if (!groups.has(key)) {
@@ -287,20 +377,26 @@ export function ConceptionGanttView({
 
     // Sort: assigned first, then unassigned
     return Array.from(groups.entries()).sort(([, a], [, b]) => {
-      const aAssigned = a.courses.some(c => c.assignmentStatus === "assigned");
-      const bAssigned = b.courses.some(c => c.assignmentStatus === "assigned");
+      const aAssigned = a.courses.some(c => c.assignmentStatus === "affectee");
+      const bAssigned = b.courses.some(c => c.assignmentStatus === "affectee");
       if (aAssigned !== bAssigned) return aAssigned ? -1 : 1;
       return a.label.localeCompare(b.label);
     });
   }, [dayCourses, viewMode]);
 
-  // Scroll to ~6:00 on mount
+  // Scroll to optimal position on mount
   useEffect(() => {
     if (scrollRef.current) {
-      const offset6h = minutesToPx(6 * 60, zoomLevel);
-      scrollRef.current.scrollLeft = offset6h - 50;
+      if (startHour > 0) {
+        // If start hour is configured, scroll to beginning
+        scrollRef.current.scrollLeft = 0;
+      } else {
+        // Default: scroll to ~6:00
+        const offset6h = minutesToPx(6 * 60, zoomLevel);
+        scrollRef.current.scrollLeft = offset6h - 50;
+      }
     }
-  }, [zoomLevel, date]);
+  }, [zoomLevel, date, startHour]);
 
   const dateObj = parseISO(date);
 
@@ -361,6 +457,8 @@ export function ConceptionGanttView({
                 zoomLevel={zoomLevel}
                 viewMode={viewMode}
                 onCourseClick={onCourseClick}
+                tournees={tournees}
+                startHour={startHour}
               />
             ))
           )}

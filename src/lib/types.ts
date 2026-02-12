@@ -114,8 +114,8 @@ export type Course = {
   startLocation: string;
   endLocation: string;
   intermediateLocations?: string[]; // For multi-destination: [A, B, C, D]
-  // Assignment status
-  assignmentStatus: 'unassigned' | 'partial' | 'assigned';
+  // Assignment status - Standardized vocabulary
+  assignmentStatus: 'non_affectee' | 'partiellement_affectee' | 'affectee';
   assignedDriverId?: string;
   assignedDriverName?: string;
   assignedVehicleId?: string;
@@ -263,16 +263,22 @@ export type ResourceCompatibility = {
 export type Tournee = {
   id: string;
   number: string; // e.g., "T-001"
-  vehicleId: string;
-  vehicleImmat: string;
-  vehicleType: string;
+  tourneeCode: string; // Unique code e.g., "T-LGN-001"
+  vehicleId?: string; // Optional - can create tournée without vehicle
+  vehicleImmat?: string;
+  vehicleType?: string;
   vehicleEnergy?: string;
-  driverId?: string;
+  driverId?: string; // Optional - can create tournée without driver
   driverName?: string;
   driverType?: string;
   courses: Course[];
   date: string; // YYYY-MM-DD
   status: 'draft' | 'published' | 'in_progress' | 'completed';
+  servicePickup?: {
+    location: string;
+    time: string; // HH:mm
+    kmFromBase: number;
+  };
 };
 
 export type PlanningHealthMetrics = {

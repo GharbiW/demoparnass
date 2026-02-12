@@ -47,15 +47,20 @@ import { fr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { getAISuggestions, getAvailableDrivers, getAvailableVehicles, subcontractors } from "@/lib/conception-planning-data";
 import { drivers } from "@/lib/planning-data";
+import { Tournee } from "@/lib/types";
+import { reassignDriver, reassignVehicle, checkTourneeCoherence, shouldSplitTournee } from "@/lib/tournee-reassignment";
+import { useToast } from "@/hooks/use-toast";
 
 interface CourseDetailDialogProps {
   course: Course | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSave?: (course: Course) => void;
+  tournees?: Tournee[];
 }
 
-export function CourseDetailDialog({ course, open, onOpenChange, onSave }: CourseDetailDialogProps) {
+export function CourseDetailDialog({ course, open, onOpenChange, onSave, tournees }: CourseDetailDialogProps) {
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("details");
   const [isSensitive, setIsSensitive] = useState(course?.isSensitive || false);
   const [loadingCode, setLoadingCode] = useState(course?.loadingCode || "");
@@ -88,6 +93,17 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave }: Cours
   const availableVehicles = useMemo(() => getAvailableVehicles(), []);
   const aiSuggestions = useMemo(() => course ? getAISuggestions(course) : [], [course]);
 
+  // Find tournée for this course
+  const tournee = useMemo(() => {
+    if (!course || !tournees) return undefined;
+    return tournees.find(t => t.id === course.tourneeId || t.courses.some(c => c.id === course.id));
+  }, [course, tournees]);
+
+  // Service pickup state (managed at tournée level)
+  const [servicePickupLocation, setServicePickupLocation] = useState(tournee?.servicePickup?.location || "");
+  const [servicePickupTime, setServicePickupTime] = useState(tournee?.servicePickup?.time || "");
+  const [servicePickupKm, setServicePickupKm] = useState(tournee?.servicePickup?.kmFromBase?.toString() || "");
+
   if (!course) return null;
 
   const dateObj = parseISO(course.date);
@@ -106,15 +122,72 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave }: Cours
 
   const handleSave = () => {
     setSaving(true);
+    
+    // Check if driver or vehicle changed
+    const driverChanged = selectedDriverId !== course?.assignedDriverId;
+    const vehicleChanged = selectedVehicleId !== course?.assignedVehicleId;
+    const newDriverName = selectedDriverId ? drivers.find(d => d.id === selectedDriverId)?.name : undefined;
+    const newVehicle = availableVehicles.find(v => v.vin === selectedVehicleId);
+
+    // Use reassignment logic if driver or vehicle changed and course is part of a tournée
+    if ((driverChanged || vehicleChanged) && tournee && course) {
+      if (driverChanged && selectedDriverId && newDriverName) {
+        const result = reassignDriver(
+          [course],
+          selectedDriverId,
+          newDriverName,
+          tournees || [],
+          availableVehicles.map(v => ({ vin: v.vin, immatriculation: v.immatriculation, type: course.requiredVehicleType }))
+        );
+        
+        if (result.success) {
+          toast({
+            title: "Conducteur réaffecté",
+            description: result.message,
+            variant: result.action === 'reassigned' ? 'default' : 'destructive',
+          });
+          
+          // Check if tournée should be split
+          if (result.updatedTournee) {
+            const splitCheck = shouldSplitTournee(result.updatedTournee);
+            if (splitCheck.shouldSplit) {
+              toast({
+                title: "Attention: Tournée incohérente",
+                description: `La tournée ${result.updatedTournee.tourneeCode} pourrait nécessiter une division: ${splitCheck.reason}`,
+                variant: 'destructive',
+              });
+            }
+          }
+        }
+      }
+      
+      if (vehicleChanged && selectedVehicleId && newVehicle) {
+        const result = reassignVehicle(
+          [course],
+          selectedVehicleId,
+          newVehicle.immatriculation,
+          tournees || []
+        );
+        
+        if (result.success) {
+          toast({
+            title: "Véhicule réaffecté",
+            description: result.message,
+          });
+        }
+      }
+    }
+
     const updatedCourse: Course = {
       ...course,
       isSensitive,
       loadingCode: loadingCode || undefined,
       comments: comments.length > 0 ? comments : undefined,
       assignedDriverId: selectedDriverId || undefined,
-      assignedDriverName: selectedDriverId ? drivers.find(d => d.id === selectedDriverId)?.name : undefined,
+      assignedDriverName: selectedDriverId ? newDriverName : undefined,
       assignedVehicleId: selectedVehicleId || undefined,
-      assignmentStatus: selectedDriverId && selectedVehicleId ? 'assigned' : selectedDriverId || selectedVehicleId ? 'partial' : 'unassigned',
+      assignedVehicleImmat: selectedVehicleId && newVehicle ? newVehicle.immatriculation : course?.assignedVehicleImmat,
+      assignmentStatus: selectedDriverId && selectedVehicleId ? 'affectee' : selectedDriverId || selectedVehicleId ? 'partiellement_affectee' : 'non_affectee',
       subcontractorId: selectedSubcontractor || undefined,
       subcontractorName: selectedSubcontractor ? subcontractors.find(s => s.id === selectedSubcontractor)?.name : undefined,
       temporaryModifications: modAddress || modDateStart ? {
@@ -152,7 +225,7 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave }: Cours
             {course.isSensitive && <Badge variant="outline" className="text-[10px] border-violet-300 text-violet-700"><Shield className="h-3 w-3 mr-1" />Sensible</Badge>}
             {course.prestationType === 'sup' && <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700"><Zap className="h-3 w-3 mr-1" />SUP</Badge>}
             <Badge variant="secondary" className="text-[10px]">
-              {course.assignmentStatus === 'assigned' ? 'Affecté' : course.assignmentStatus === 'partial' ? 'Partiel' : 'Non affecté'}
+              {course.assignmentStatus === 'affectee' ? 'Affectée' : course.assignmentStatus === 'partiellement_affectee' ? 'Partiellement affectée' : 'Non affectée'}
             </Badge>
           </div>
           <DialogDescription className="text-xs flex items-center gap-3 mt-1">
@@ -393,6 +466,60 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave }: Cours
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Service Pickup (Tournée level) */}
+              {tournee && (
+                <>
+                  <Separator />
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                      Prise de service (Tournée {tournee.tourneeCode})
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger><Info className="h-3 w-3 text-muted-foreground" /></TooltipTrigger>
+                          <TooltipContent className="text-xs max-w-xs">La prise de service est rattachée à la tournée, pas à la course individuelle. Les calculs kilométriques sont effectués au niveau de la tournée.</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </h4>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Lieu</Label>
+                        <Input
+                          value={servicePickupLocation}
+                          onChange={(e) => setServicePickupLocation(e.target.value)}
+                          placeholder="Lieu de prise de service"
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Heure</Label>
+                        <Input
+                          type="time"
+                          value={servicePickupTime}
+                          onChange={(e) => setServicePickupTime(e.target.value)}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Distance (km)</Label>
+                        <Input
+                          type="number"
+                          value={servicePickupKm}
+                          onChange={(e) => setServicePickupKm(e.target.value)}
+                          placeholder="0"
+                          className="h-8 text-xs"
+                          min="0"
+                        />
+                      </div>
+                    </div>
+                    {tournee.servicePickup && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Actuel: {tournee.servicePickup.location} à {tournee.servicePickup.time} ({tournee.servicePickup.kmFromBase} km)
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
             </TabsContent>
 
             {/* ─── Modifications Tab ─── */}

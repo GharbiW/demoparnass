@@ -277,7 +277,7 @@ function PrestationCard({
 }) {
   const firstCourse = prestation.courses[0];
   const dates = [...new Set(prestation.courses.map(c => c.date))].sort();
-  const unassignedCount = prestation.courses.filter(c => c.assignmentStatus === 'unassigned').length;
+  const unassignedCount = prestation.courses.filter(c => c.assignmentStatus === 'non_affectee').length;
   const urgency = getDateUrgency(dates[0]);
 
   return (
@@ -424,7 +424,7 @@ function PrestationRow({
 }) {
   const firstCourse = prestation.courses[0];
   const dates = [...new Set(prestation.courses.map(c => c.date))].sort();
-  const unassignedCount = prestation.courses.filter(c => c.assignmentStatus === 'unassigned').length;
+  const unassignedCount = prestation.courses.filter(c => c.assignmentStatus === 'non_affectee').length;
   const urgency = getDateUrgency(dates[0]);
   const locations = [firstCourse.startLocation, ...(firstCourse.intermediateLocations || []), firstCourse.endLocation];
   const rConfig = reasonConfig[firstCourse.nonPlacementReason];
@@ -601,7 +601,7 @@ export default function APlacerPage() {
     setPrestations(prev => prev.map(prestation => {
       const updatedCourses = prestation.courses.map(course => {
         if (courseIds.includes(course.id)) {
-          return { ...course, assignmentStatus: 'assigned' as const, assignedDriverId: driverId, assignedVehicleId: vehicleId };
+          return { ...course, assignmentStatus: 'affectee' as const, assignedDriverId: driverId, assignedVehicleId: vehicleId };
         }
         return course;
       });
@@ -611,7 +611,7 @@ export default function APlacerPage() {
   };
 
   const activeFilterCount = [clientFilter, typeFilter, reasonFilter, weekFilter, vehicleTypeFilter, driverSkillFilter].filter(f => f !== "all").length;
-  const totalUnassigned = filteredPrestations.reduce((sum, p) => sum + p.courses.filter(c => c.assignmentStatus === 'unassigned').length, 0);
+  const totalUnassigned = filteredPrestations.reduce((sum, p) => sum + p.courses.filter(c => c.assignmentStatus === 'non_affectee').length, 0);
 
   return (
     <div className="flex flex-col h-full">

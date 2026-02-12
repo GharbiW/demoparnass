@@ -58,7 +58,7 @@ import {
   ChevronUp,
   ChevronDown,
 } from "lucide-react";
-import { planningCourses, getHealthMetrics, planningTournees } from "@/lib/conception-planning-data";
+import { planningCourses, getHealthMetrics, planningTournees, getPlanVsRealData } from "@/lib/conception-planning-data";
 import { unassignedPrestations } from "@/lib/a-placer-data-v2";
 import { drivers } from "@/lib/planning-data";
 import { format, parseISO, startOfWeek, endOfWeek, addWeeks, differenceInDays } from "date-fns";
@@ -92,10 +92,10 @@ function buildKPIs() {
     }
   });
 
-  const thisWeekAssigned = thisWeekCourses.filter((c) => c.assignmentStatus === "assigned").length;
-  const thisWeekUnassigned = thisWeekCourses.filter((c) => c.assignmentStatus === "unassigned").length;
-  const nextWeekAssigned = nextWeekCourses.filter((c) => c.assignmentStatus === "assigned").length;
-  const nextWeekUnassigned = nextWeekCourses.filter((c) => c.assignmentStatus === "unassigned").length;
+  const thisWeekAssigned = thisWeekCourses.filter((c) => c.assignmentStatus === "affectee").length;
+  const thisWeekUnassigned = thisWeekCourses.filter((c) => c.assignmentStatus === "non_affectee").length;
+  const nextWeekAssigned = nextWeekCourses.filter((c) => c.assignmentStatus === "affectee").length;
+  const nextWeekUnassigned = nextWeekCourses.filter((c) => c.assignmentStatus === "non_affectee").length;
 
   const placementRate = thisWeekCourses.length > 0
     ? Math.round((thisWeekAssigned / thisWeekCourses.length) * 100)
@@ -120,14 +120,14 @@ function buildKPIs() {
 
   // Courses by status
   const coursesByStatus = {
-    assigned: planningCourses.filter((c) => c.assignmentStatus === "assigned").length,
-    unassigned: planningCourses.filter((c) => c.assignmentStatus === "unassigned").length,
-    partial: planningCourses.filter((c) => c.assignmentStatus === "partial").length,
+    assigned: planningCourses.filter((c) => c.assignmentStatus === "affectee").length,
+    unassigned: planningCourses.filter((c) => c.assignmentStatus === "non_affectee").length,
+    partial: planningCourses.filter((c) => c.assignmentStatus === "partiellement_affectee").length,
   };
 
   // Sensitive courses
   const sensitiveCourses = planningCourses.filter((c) => c.isSensitive).length;
-  const sensitiveUnassigned = planningCourses.filter((c) => c.isSensitive && c.assignmentStatus !== "assigned").length;
+  const sensitiveUnassigned = planningCourses.filter((c) => c.isSensitive && c.assignmentStatus !== "affectee").length;
 
   // Drivers summary
   const activeDrivers = drivers.filter((d) => d.status === "Actif").length;
@@ -147,7 +147,7 @@ function buildKPIs() {
   // Unassigned by reason
   const unassignedByReason: Record<string, number> = {};
   planningCourses
-    .filter((c) => c.assignmentStatus === "unassigned")
+    .filter((c) => c.assignmentStatus === "non_affectee")
     .forEach((c) => {
       unassignedByReason[c.nonPlacementReason] = (unassignedByReason[c.nonPlacementReason] || 0) + 1;
     });
@@ -205,6 +205,191 @@ const reasonLabels: Record<string, string> = {
   tournee_modifiee: "Tournée modifiée",
   rides_combines_sans_affectation: "Rides combinées",
 };
+
+// ─── Plan vs Réel Section ─────────────────────────────────────────────────
+function PlanVsRealSection() {
+  const planVsReal = useMemo(() => getPlanVsRealData(), []);
+
+  if (planVsReal.totalCompared === 0) {
+    return (
+      <Card>
+        <CardContent className="p-4 text-center text-sm text-muted-foreground">
+          Aucune donnée plan vs réel disponible pour cette période
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Target className="h-4 w-4 text-indigo-500" />
+            Plan vs Réel — Indicateurs d&apos;écart
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Comparaison entre les courses planifiées et les courses réellement exécutées.
+            Écarts de temps, changements de ressources et taux de conformité.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Summary KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className={cn("bg-emerald-50 rounded-lg p-3 text-center border border-emerald-100")}>
+              <p className="text-2xl font-bold text-emerald-700">{planVsReal.onTimeRate}%</p>
+              <p className="text-[10px] text-emerald-600 mt-0.5 font-medium">Taux ponctualité</p>
+            </div>
+            <div className="bg-sky-50 rounded-lg p-3 text-center border border-sky-100">
+              <p className="text-2xl font-bold text-sky-700">{planVsReal.totalCompared}</p>
+              <p className="text-[10px] text-sky-600 mt-0.5 font-medium">Courses comparées</p>
+            </div>
+            <div className="bg-amber-50 rounded-lg p-3 text-center border border-amber-100">
+              <div className="flex items-center justify-center gap-1">
+                <p className="text-2xl font-bold text-amber-700">{planVsReal.avgStartDeviation > 0 ? '+' : ''}{planVsReal.avgStartDeviation}</p>
+                <span className="text-xs text-amber-600">min</span>
+              </div>
+              <p className="text-[10px] text-amber-600 mt-0.5 font-medium">Écart départ moyen</p>
+            </div>
+            <div className="bg-violet-50 rounded-lg p-3 text-center border border-violet-100">
+              <p className="text-2xl font-bold text-violet-700">{planVsReal.driverChangeRate}%</p>
+              <p className="text-[10px] text-violet-600 mt-0.5 font-medium">Chang. conducteur</p>
+            </div>
+            <div className="bg-rose-50 rounded-lg p-3 text-center border border-rose-100">
+              <p className="text-2xl font-bold text-rose-700">{planVsReal.vehicleChangeRate}%</p>
+              <p className="text-[10px] text-rose-600 mt-0.5 font-medium">Chang. véhicule</p>
+            </div>
+          </div>
+
+          {/* Status breakdown bar */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Répartition par statut d&apos;exécution</p>
+            <div className="flex h-4 rounded-full overflow-hidden">
+              {planVsReal.onTime > 0 && (
+                <div
+                  className="bg-emerald-500 transition-all"
+                  style={{ width: `${(planVsReal.onTime / planVsReal.totalCompared) * 100}%` }}
+                  title={`À l'heure: ${planVsReal.onTime}`}
+                />
+              )}
+              {planVsReal.minorDelay > 0 && (
+                <div
+                  className="bg-amber-400 transition-all"
+                  style={{ width: `${(planVsReal.minorDelay / planVsReal.totalCompared) * 100}%` }}
+                  title={`Retard mineur: ${planVsReal.minorDelay}`}
+                />
+              )}
+              {planVsReal.majorDelay > 0 && (
+                <div
+                  className="bg-rose-500 transition-all"
+                  style={{ width: `${(planVsReal.majorDelay / planVsReal.totalCompared) * 100}%` }}
+                  title={`Retard majeur: ${planVsReal.majorDelay}`}
+                />
+              )}
+              {planVsReal.modified > 0 && (
+                <div
+                  className="bg-violet-400 transition-all"
+                  style={{ width: `${(planVsReal.modified / planVsReal.totalCompared) * 100}%` }}
+                  title={`Modifié: ${planVsReal.modified}`}
+                />
+              )}
+              {planVsReal.cancelled > 0 && (
+                <div
+                  className="bg-slate-400 transition-all"
+                  style={{ width: `${(planVsReal.cancelled / planVsReal.totalCompared) * 100}%` }}
+                  title={`Annulé: ${planVsReal.cancelled}`}
+                />
+              )}
+            </div>
+            <div className="flex items-center gap-4 text-[10px]">
+              <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-emerald-500" /> À l&apos;heure ({planVsReal.onTime})</span>
+              <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-amber-400" /> Retard mineur ({planVsReal.minorDelay})</span>
+              <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-rose-500" /> Retard majeur ({planVsReal.majorDelay})</span>
+              <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-violet-400" /> Modifié ({planVsReal.modified})</span>
+              <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-slate-400" /> Annulé ({planVsReal.cancelled})</span>
+            </div>
+          </div>
+
+          {/* Sample entries table */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Dernières courses comparées (échantillon)</p>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs h-8">Course</TableHead>
+                  <TableHead className="text-xs h-8">Client</TableHead>
+                  <TableHead className="text-xs h-8">Planifié</TableHead>
+                  <TableHead className="text-xs h-8">Réel</TableHead>
+                  <TableHead className="text-xs h-8">Écart départ</TableHead>
+                  <TableHead className="text-xs h-8">Écart fin</TableHead>
+                  <TableHead className="text-xs h-8">Ressources</TableHead>
+                  <TableHead className="text-xs h-8">Statut</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {planVsReal.entries.slice(0, 12).map((entry) => (
+                  <TableRow key={entry.courseId}>
+                    <TableCell className="py-1.5 text-xs font-mono">{entry.courseId}</TableCell>
+                    <TableCell className="py-1.5 text-xs">{entry.client}</TableCell>
+                    <TableCell className="py-1.5 text-xs font-mono">{entry.planned.startTime}-{entry.planned.endTime}</TableCell>
+                    <TableCell className="py-1.5 text-xs font-mono">{entry.actual.startTime}-{entry.actual.endTime}</TableCell>
+                    <TableCell className="py-1.5">
+                      <span className={cn("text-xs font-mono font-medium",
+                        entry.deviations.startTimeDeviation > 10 ? "text-rose-600" :
+                        entry.deviations.startTimeDeviation > 5 ? "text-amber-600" :
+                        entry.deviations.startTimeDeviation < -2 ? "text-sky-600" : "text-emerald-600"
+                      )}>
+                        {entry.deviations.startTimeDeviation > 0 ? '+' : ''}{entry.deviations.startTimeDeviation}min
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-1.5">
+                      <span className={cn("text-xs font-mono font-medium",
+                        entry.deviations.endTimeDeviation > 15 ? "text-rose-600" :
+                        entry.deviations.endTimeDeviation > 5 ? "text-amber-600" :
+                        entry.deviations.endTimeDeviation < -5 ? "text-sky-600" : "text-emerald-600"
+                      )}>
+                        {entry.deviations.endTimeDeviation > 0 ? '+' : ''}{entry.deviations.endTimeDeviation}min
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-1.5">
+                      <div className="flex items-center gap-1">
+                        {entry.deviations.driverChanged && (
+                          <Badge variant="outline" className="text-[9px] h-4 border-violet-300 text-violet-600">Cond. changé</Badge>
+                        )}
+                        {entry.deviations.vehicleChanged && (
+                          <Badge variant="outline" className="text-[9px] h-4 border-amber-300 text-amber-600">Véh. changé</Badge>
+                        )}
+                        {!entry.deviations.driverChanged && !entry.deviations.vehicleChanged && (
+                          <span className="text-[10px] text-muted-foreground">—</span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-1.5">
+                      <Badge
+                        className={cn("text-[10px]",
+                          entry.status === 'on_time' ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
+                          entry.status === 'minor_delay' ? "bg-amber-100 text-amber-700 border-amber-200" :
+                          entry.status === 'major_delay' ? "bg-rose-100 text-rose-700 border-rose-200" :
+                          entry.status === 'modified' ? "bg-violet-100 text-violet-700 border-violet-200" :
+                          "bg-slate-100 text-slate-700 border-slate-200"
+                        )}
+                      >
+                        {entry.status === 'on_time' ? 'À l\'heure' :
+                         entry.status === 'minor_delay' ? 'Retard mineur' :
+                         entry.status === 'major_delay' ? 'Retard majeur' :
+                         entry.status === 'modified' ? 'Modifié' : 'Annulé'}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
 
 export default function ReportingPage() {
   const kpis = useMemo(() => buildKPIs(), []);
@@ -690,6 +875,9 @@ export default function ReportingPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* ─── Plan vs Réel ────────────────────────────────────────────────── */}
+            <PlanVsRealSection />
           </div>
         </ScrollArea>
       </div>

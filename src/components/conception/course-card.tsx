@@ -133,7 +133,7 @@ export function CourseCard({ course, onAssign, compact = false }: CourseCardProp
         )}
 
         {/* Assignment status */}
-        {course.assignmentStatus === 'partial' && (
+        {course.assignmentStatus === 'partiellement_affectee' && (
           <Badge variant="outline" className="text-xs text-orange-600">
             Assignation partielle ({course.assignedSegments ?? 0}/{course.segments?.length ?? 0} segments)
           </Badge>

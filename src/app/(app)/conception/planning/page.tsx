@@ -59,11 +59,17 @@ import {
   planningTournees,
   getHealthMetrics,
   planningVersions,
+  getAvailableDrivers,
+  getAvailableVehicles,
+  getVehicleAvailability,
 } from "@/lib/conception-planning-data";
 import { HealthTiles } from "@/components/conception/planning/health-tiles";
 import { ConceptionGanttView } from "@/components/conception/planning/gantt-view";
 import { CourseDetailDialog } from "@/components/conception/planning/course-detail-dialog";
 import { PublishDialog } from "@/components/conception/planning/publish-dialog";
+import { ListViewGrouped, GroupingMode } from "@/components/conception/planning/list-view-grouped";
+import { AdvancedFiltersPanel, AdvancedFilters, defaultFilters } from "@/components/conception/planning/advanced-filters";
+import { QuickSupDialog } from "@/components/conception/planning/quick-sup-dialog";
 
 type DisplayMode = "gantt" | "list";
 type ViewMode = "vehicles" | "drivers";
@@ -81,7 +87,7 @@ function CourseTableRow({
   viewMode: ViewMode;
   onClick: () => void;
 }) {
-  const isUnassigned = course.assignmentStatus !== "assigned";
+  const isUnassigned = course.assignmentStatus !== "affectee";
   const isSup = course.prestationType === "sup";
   const dateObj = parseISO(course.date);
 
@@ -129,14 +135,14 @@ function CourseTableRow({
           variant="outline"
           className={cn(
             "text-[10px] h-4",
-            course.assignmentStatus === "assigned"
+            course.assignmentStatus === "affectee"
               ? "border-emerald-300 text-emerald-700 bg-emerald-50"
-              : course.assignmentStatus === "partial"
+              : course.assignmentStatus === "partiellement_affectee"
                 ? "border-amber-300 text-amber-700 bg-amber-50"
                 : "border-slate-300 text-slate-700 bg-slate-50"
           )}
         >
-          {course.assignmentStatus === "assigned" ? "Affecté" : course.assignmentStatus === "partial" ? "Partiel" : "Non affecté"}
+          {course.assignmentStatus === "affectee" ? "Affectée" : course.assignmentStatus === "partiellement_affectee" ? "Partiellement affectée" : "Non affectée"}
         </Badge>
       </TableCell>
       <TableCell className="py-2 text-xs">
@@ -177,12 +183,17 @@ function ConceptionPlanningContent() {
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [quickSupOpen, setQuickSupOpen] = useState(false);
   const [courses, setCourses] = useState<Course[]>(planningCourses);
+  const [groupingMode, setGroupingMode] = useState<GroupingMode>("tournee");
+  const [ganttStartHour, setGanttStartHour] = useState(0); // 0 = midnight, 6 = 6:00
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [healthFilter, setHealthFilter] = useState<string | null>(null);
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>(defaultFilters);
 
   // Computed
   const currentDateStr = format(date, "yyyy-MM-dd");
@@ -190,6 +201,21 @@ function ConceptionPlanningContent() {
   const weekDays = Array.from({ length: 6 }, (_, i) => addDays(weekStart, i));
 
   const metrics = useMemo(() => getHealthMetrics(), []);
+  const vehicleAvailability = useMemo(() => getVehicleAvailability(currentDateStr), [currentDateStr]);
+
+  // Available data for advanced filters
+  const availableClients = useMemo(() => 
+    Array.from(new Set(courses.map(c => c.client).filter(Boolean) as string[])).sort(), 
+    [courses]
+  );
+  const availableVehiclesForFilter = useMemo(() => 
+    getAvailableVehicles().map(v => ({ vin: v.vin, immatriculation: v.immatriculation, type: 'Semi-remorque' })), 
+    []
+  );
+  const availableDriversForFilter = useMemo(() => 
+    getAvailableDrivers().map(d => ({ id: d.id, name: d.name, type: d.driverType || 'CM' })), 
+    []
+  );
 
   // Filter courses for the list view
   const filteredCourses = useMemo(() => {
@@ -227,18 +253,92 @@ function ConceptionPlanningContent() {
       filtered = filtered.filter(c => c.prestationType === typeFilter);
     }
 
+    // Health filter
+    if (healthFilter) {
+      switch (healthFilter) {
+        case "absent_drivers":
+          // Filter courses impacted by absent drivers
+          // In a real scenario, we'd check which drivers are absent and filter their courses
+          filtered = filtered.filter(c => c.assignmentStatus === "non_affectee" && c.missingResource === "driver");
+          break;
+        case "unavailable_vehicles":
+          // Filter courses impacted by unavailable vehicles
+          filtered = filtered.filter(c => c.assignmentStatus === "non_affectee" && c.missingResource === "vehicle");
+          break;
+        case "unplaced":
+          // Filter unplaced courses
+          filtered = filtered.filter(c => c.assignmentStatus !== "affectee");
+          break;
+        case "alerts":
+          // Filter courses with alerts (simplified - in real scenario would check alert rules)
+          filtered = filtered.filter(c => c.constraintWarnings && c.constraintWarnings.length > 0);
+          break;
+        case "amplitude":
+          // Filter courses with drivers out of amplitude (simplified)
+          // In real scenario, would check driver amplitude constraints
+          break;
+        case "modifications":
+          // Filter courses with modifications
+          filtered = filtered.filter(c => c.temporaryModifications || c.cancellation);
+          break;
+        case "expiring":
+          // Filter prestations expiring in 4 weeks (simplified)
+          // In real scenario, would check prestation end dates
+          break;
+      }
+    }
+
+    // Advanced filters
+    if (advancedFilters.client !== "all") {
+      filtered = filtered.filter(c => c.client === advancedFilters.client);
+    }
+    if (advancedFilters.vehicleType !== "all") {
+      filtered = filtered.filter(c => c.requiredVehicleType === advancedFilters.vehicleType);
+    }
+    if (advancedFilters.driverType !== "all") {
+      filtered = filtered.filter(c => c.requiredDriverType === advancedFilters.driverType);
+    }
+    if (advancedFilters.vehicle !== "all") {
+      filtered = filtered.filter(c => c.assignedVehicleId === advancedFilters.vehicle);
+    }
+    if (advancedFilters.driver !== "all") {
+      filtered = filtered.filter(c => c.assignedDriverId === advancedFilters.driver);
+    }
+    if (advancedFilters.prestationType !== "all") {
+      filtered = filtered.filter(c => c.prestationType === advancedFilters.prestationType);
+    }
+    if (advancedFilters.energy !== "all") {
+      filtered = filtered.filter(c => c.requiredVehicleEnergy === advancedFilters.energy);
+    }
+    if (advancedFilters.hasFormation !== "all") {
+      filtered = filtered.filter(c => 
+        c.requiredDriverSkills.includes(advancedFilters.hasFormation as any)
+      );
+    }
+    if (advancedFilters.sensitiveOnly) {
+      filtered = filtered.filter(c => c.isSensitive);
+    }
+    if (!advancedFilters.includeWeekend) {
+      // Exclude weekends (Saturday = 6, Sunday = 0)
+      filtered = filtered.filter(c => {
+        const date = new Date(c.date);
+        const day = date.getDay();
+        return day !== 0 && day !== 6;
+      });
+    }
+
     return filtered.sort((a, b) => {
       // Sensitive first
       if (a.isSensitive !== b.isSensitive) return a.isSensitive ? -1 : 1;
       // Then by time
       return a.startTime.localeCompare(b.startTime);
     });
-  }, [courses, currentDateStr, periodMode, weekStart, searchQuery, statusFilter, typeFilter]);
+  }, [courses, currentDateStr, periodMode, weekStart, searchQuery, statusFilter, typeFilter, healthFilter, advancedFilters]);
 
   // Stats for current view
   const viewStats = useMemo(() => {
     const total = filteredCourses.length;
-    const assigned = filteredCourses.filter(c => c.assignmentStatus === "assigned").length;
+    const assigned = filteredCourses.filter(c => c.assignmentStatus === "affectee").length;
     const sensitive = filteredCourses.filter(c => c.isSensitive).length;
     return { total, assigned, unassigned: total - assigned, sensitive };
   }, [filteredCourses]);
@@ -264,14 +364,24 @@ function ConceptionPlanningContent() {
   };
 
   const handleTileClick = (filter: string) => {
-    if (filter === "unplaced") {
-      setStatusFilter("unassigned");
-      setDisplayMode("list");
+    // Toggle filter - if same filter clicked, remove it
+    if (healthFilter === filter) {
+      setHealthFilter(null);
+      toast({
+        title: "Filtre retiré",
+        description: "Le filtre a été désactivé.",
+      });
+    } else {
+      setHealthFilter(filter);
+      // Switch to list view to see filtered results
+      if (displayMode === "gantt") {
+        setDisplayMode("list");
+      }
+      toast({
+        title: "Filtre appliqué",
+        description: `Affichage des courses filtrées par: ${filter.replace(/_/g, ' ')}`,
+      });
     }
-    toast({
-      title: "Filtre appliqué",
-      description: `Filtre: ${filter}`,
-    });
   };
 
   const navigateDate = (direction: number) => {
@@ -380,6 +490,21 @@ function ConceptionPlanningContent() {
             </Button>
           </div>
 
+          {/* Grouping mode (List only) */}
+          {displayMode === "list" && (
+            <Select value={groupingMode} onValueChange={(v) => setGroupingMode(v as GroupingMode)}>
+              <SelectTrigger className="h-7 w-[140px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="tournee">Par Tournée</SelectItem>
+                <SelectItem value="vehicle">Par Véhicule</SelectItem>
+                <SelectItem value="driver">Par Conducteur</SelectItem>
+                <SelectItem value="none">Aucun regroupement</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+
           {/* Zoom (Gantt only) */}
           {displayMode === "gantt" && (
             <div className="flex items-center gap-1 rounded-md bg-muted p-0.5">
@@ -410,6 +535,31 @@ function ConceptionPlanningContent() {
             </div>
           )}
 
+          {/* Quick SUP */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+            onClick={() => setQuickSupOpen(true)}
+          >
+            <Zap className="h-3 w-3 mr-1" /> + SUP
+          </Button>
+
+          {/* Gantt start hour config */}
+          {displayMode === "gantt" && (
+            <Select value={String(ganttStartHour)} onValueChange={(v) => setGanttStartHour(Number(v))}>
+              <SelectTrigger className="h-7 w-[100px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">00h-24h</SelectItem>
+                <SelectItem value="4">04h-04h</SelectItem>
+                <SelectItem value="5">05h-05h</SelectItem>
+                <SelectItem value="6">06h-06h</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+
           {/* Publish CTA */}
           <Button
             size="sm"
@@ -422,7 +572,52 @@ function ConceptionPlanningContent() {
       </div>
 
       {/* ─── Health Tiles ─── */}
-      <HealthTiles metrics={metrics} onTileClick={handleTileClick} />
+      <div className="space-y-2">
+        <HealthTiles metrics={metrics} onTileClick={handleTileClick} />
+        {healthFilter && (
+          <div className="flex items-center gap-2">
+            <Badge variant="default" className="text-xs">
+              Filtre actif: {healthFilter.replace(/_/g, ' ')}
+            </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs"
+              onClick={() => setHealthFilter(null)}
+            >
+              <X className="h-3 w-3 mr-1" /> Retirer le filtre
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* ─── Vehicle Availability (Pessimistic) ─── */}
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/40 rounded-lg border text-xs">
+        <Truck className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+        <span className="font-semibold text-slate-700">Disponibilité véhicules (pessimiste):</span>
+        <Badge variant="outline" className={cn("text-[10px] h-5", vehicleAvailability.availabilityRate >= 80 ? "border-emerald-300 text-emerald-700 bg-emerald-50" : vehicleAvailability.availabilityRate >= 60 ? "border-amber-300 text-amber-700 bg-amber-50" : "border-rose-300 text-rose-700 bg-rose-50")}>
+          {vehicleAvailability.availabilityRate}% dispo
+        </Badge>
+        <span className="text-muted-foreground">
+          {vehicleAvailability.availableToday}/{vehicleAvailability.totalVehicles} disponibles
+        </span>
+        {vehicleAvailability.maintenancePlanned > 0 && (
+          <Badge variant="secondary" className="text-[10px] h-5">
+            {vehicleAvailability.maintenancePlanned} maint.
+          </Badge>
+        )}
+        {vehicleAvailability.breakdowns > 0 && (
+          <Badge variant="destructive" className="text-[10px] h-5">
+            {vehicleAvailability.breakdowns} pannes
+          </Badge>
+        )}
+        <div className="flex-1" />
+        {Object.entries(vehicleAvailability.byType).slice(0, 4).map(([type, data]) => (
+          <span key={type} className="text-muted-foreground whitespace-nowrap">
+            {type}: <span className="font-medium text-foreground">{data.available}</span>/{data.total}
+          </span>
+        ))}
+      </div>
 
       {/* ─── View Stats Bar ─── */}
       <div className="flex items-center justify-between">
@@ -446,32 +641,33 @@ function ConceptionPlanningContent() {
 
         {/* List-mode filters */}
         {displayMode === "list" && (
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Rechercher..."
-                className="h-7 w-48 pl-7 text-xs"
-              />
-              {searchQuery && (
-                <button className="absolute right-2 top-1/2 -translate-y-1/2" onClick={() => setSearchQuery("")}>
-                  <X className="h-3 w-3 text-muted-foreground" />
-                </button>
-              )}
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-7 w-32 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all" className="text-xs">Tous statuts</SelectItem>
-                <SelectItem value="assigned" className="text-xs">Affecté</SelectItem>
-                <SelectItem value="partial" className="text-xs">Partiel</SelectItem>
-                <SelectItem value="unassigned" className="text-xs">Non affecté</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Rechercher..."
+                  className="h-7 w-48 pl-7 text-xs"
+                />
+                {searchQuery && (
+                  <button className="absolute right-2 top-1/2 -translate-y-1/2" onClick={() => setSearchQuery("")}>
+                    <X className="h-3 w-3 text-muted-foreground" />
+                  </button>
+                )}
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="h-7 w-32 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="text-xs">Tous statuts</SelectItem>
+                  <SelectItem value="affectee" className="text-xs">Affectée</SelectItem>
+                  <SelectItem value="partiellement_affectee" className="text-xs">Partiellement affectée</SelectItem>
+                  <SelectItem value="non_affectee" className="text-xs">Non affectée</SelectItem>
+                </SelectContent>
+              </Select>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
               <SelectTrigger className="h-7 w-32 text-xs">
                 <SelectValue />
@@ -483,6 +679,15 @@ function ConceptionPlanningContent() {
                 <SelectItem value="spot" className="text-xs">Spot</SelectItem>
               </SelectContent>
             </Select>
+            </div>
+            <AdvancedFiltersPanel
+              filters={advancedFilters}
+              onFiltersChange={setAdvancedFilters}
+              availableClients={availableClients}
+              availableVehicles={availableVehiclesForFilter}
+              availableDrivers={availableDriversForFilter}
+              onReset={() => setAdvancedFilters(defaultFilters)}
+            />
           </div>
         )}
       </div>
@@ -500,6 +705,7 @@ function ConceptionPlanningContent() {
                 date={currentDateStr}
                 zoomLevel={zoomLevel}
                 onCourseClick={handleCourseClick}
+                startHour={ganttStartHour}
               />
             ) : (
               /* Week Gantt: show day tabs */
@@ -535,47 +741,20 @@ function ConceptionPlanningContent() {
                     date={currentDateStr}
                     zoomLevel={zoomLevel}
                     onCourseClick={handleCourseClick}
+                    startHour={ganttStartHour}
                   />
                 </div>
               </div>
             )
           ) : (
             /* List View */
-            <ScrollArea className="h-full">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="text-xs h-8">Course</TableHead>
-                    <TableHead className="text-xs h-8">Client</TableHead>
-                    <TableHead className="text-xs h-8">Trajet</TableHead>
-                    <TableHead className="text-xs h-8">Date</TableHead>
-                    <TableHead className="text-xs h-8">Horaires</TableHead>
-                    <TableHead className="text-xs h-8">Statut</TableHead>
-                    <TableHead className="text-xs h-8">{viewMode === "vehicles" ? "Véhicule" : "Conducteur"}</TableHead>
-                    <TableHead className="text-xs h-8">Type</TableHead>
-                    <TableHead className="text-xs h-8 text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredCourses.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={9} className="text-center py-12 text-sm text-muted-foreground">
-                        Aucune course pour les filtres sélectionnés
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredCourses.map(course => (
-                      <CourseTableRow
-                        key={course.id}
-                        course={course}
-                        viewMode={viewMode}
-                        onClick={() => handleCourseClick(course)}
-                      />
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </ScrollArea>
+            <ListViewGrouped
+              courses={filteredCourses}
+              tournees={planningTournees}
+              groupingMode={groupingMode}
+              viewMode={viewMode}
+              onCourseClick={handleCourseClick}
+            />
           )}
         </CardContent>
       </Card>
@@ -586,6 +765,7 @@ function ConceptionPlanningContent() {
         open={courseDialogOpen}
         onOpenChange={setCourseDialogOpen}
         onSave={handleCourseSave}
+        tournees={planningTournees}
       />
 
       <PublishDialog
@@ -595,6 +775,12 @@ function ConceptionPlanningContent() {
         weekLabel={`S${format(weekStart, "ww")}`}
         versionLabel="v1"
         onPublish={handlePublish}
+      />
+
+      <QuickSupDialog
+        open={quickSupOpen}
+        onOpenChange={setQuickSupOpen}
+        defaultDate={currentDateStr}
       />
     </div>
   );

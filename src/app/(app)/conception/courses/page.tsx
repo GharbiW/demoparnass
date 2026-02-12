@@ -82,15 +82,31 @@ function getAllCourses(): Course[] {
   return Array.from(courseMap.values());
 }
 
-// Status config
+// Status config - Standardized vocabulary
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+  affectee: {
+    label: "Affectée",
+    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+  },
+  partiellement_affectee: {
+    label: "Partiellement affectée",
+    color: "bg-amber-50 text-amber-700 border-amber-200",
+    icon: <CircleDot className="h-3.5 w-3.5" />,
+  },
+  non_affectee: {
+    label: "Non affectée",
+    color: "bg-slate-50 text-slate-600 border-slate-200",
+    icon: <XCircle className="h-3.5 w-3.5" />,
+  },
+  // Legacy mappings for backward compatibility
   assigned: {
     label: "Affectée",
     color: "bg-emerald-50 text-emerald-700 border-emerald-200",
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
   },
   partial: {
-    label: "Partielle",
+    label: "Partiellement affectée",
     color: "bg-amber-50 text-amber-700 border-amber-200",
     icon: <CircleDot className="h-3.5 w-3.5" />,
   },
@@ -118,6 +134,8 @@ export default function CoursesPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [weekFilter, setWeekFilter] = useState("all");
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState("all");
+  const [energyFilter, setEnergyFilter] = useState("all");
+  const [sensitiveFilter, setSensitiveFilter] = useState(false);
   const [sortField, setSortField] = useState<SortField>("date");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
@@ -161,6 +179,16 @@ export default function CoursesPage() {
       courses = courses.filter((c) => c.requiredVehicleType === vehicleTypeFilter);
     }
 
+    // Energy filter
+    if (energyFilter !== "all") {
+      courses = courses.filter((c) => c.requiredVehicleEnergy === energyFilter);
+    }
+
+    // Sensitive filter
+    if (sensitiveFilter) {
+      courses = courses.filter((c) => c.isSensitive);
+    }
+
     // Week filter
     if (weekFilter !== "all") {
       const weekNum = parseInt(weekFilter.replace("S+", ""));
@@ -200,15 +228,15 @@ export default function CoursesPage() {
     });
 
     return courses;
-  }, [allCourses, searchTerm, statusFilter, typeFilter, weekFilter, vehicleTypeFilter, sortField, sortDirection]);
+  }, [allCourses, searchTerm, statusFilter, typeFilter, weekFilter, vehicleTypeFilter, energyFilter, sensitiveFilter, sortField, sortDirection]);
 
   // Stats
   const stats = useMemo(() => {
     return {
       total: allCourses.length,
-      assigned: allCourses.filter((c) => c.assignmentStatus === "assigned").length,
-      unassigned: allCourses.filter((c) => c.assignmentStatus === "unassigned").length,
-      partial: allCourses.filter((c) => c.assignmentStatus === "partial").length,
+      assigned: allCourses.filter((c) => c.assignmentStatus === "affectee").length,
+      unassigned: allCourses.filter((c) => c.assignmentStatus === "non_affectee").length,
+      partial: allCourses.filter((c) => c.assignmentStatus === "partiellement_affectee").length,
       sensitive: allCourses.filter((c) => c.isSensitive).length,
       sup: allCourses.filter((c) => c.prestationType === "sup").length,
     };
@@ -334,9 +362,9 @@ export default function CoursesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tous statuts</SelectItem>
-                  <SelectItem value="assigned">Affectées</SelectItem>
-                  <SelectItem value="unassigned">Non affectées</SelectItem>
-                  <SelectItem value="partial">Partielles</SelectItem>
+                  <SelectItem value="affectee">Affectées</SelectItem>
+                  <SelectItem value="non_affectee">Non affectées</SelectItem>
+                  <SelectItem value="partiellement_affectee">Partielles</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={typeFilter} onValueChange={setTypeFilter}>
@@ -375,6 +403,26 @@ export default function CoursesPage() {
                   <SelectItem value="S+3">S+3</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={energyFilter} onValueChange={setEnergyFilter}>
+                <SelectTrigger className="w-[130px] h-9">
+                  <SelectValue placeholder="Énergie" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toute énergie</SelectItem>
+                  <SelectItem value="Diesel">Diesel</SelectItem>
+                  <SelectItem value="Gaz">Gaz</SelectItem>
+                  <SelectItem value="Électrique">Électrique</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant={sensitiveFilter ? "default" : "outline"}
+                size="sm"
+                className={cn("h-9 gap-1.5", sensitiveFilter && "bg-violet-600 hover:bg-violet-700")}
+                onClick={() => setSensitiveFilter(!sensitiveFilter)}
+              >
+                <Shield className="h-3.5 w-3.5" />
+                Sensibles
+              </Button>
 
               <div className="flex items-center border rounded-md">
                 <Button
@@ -440,7 +488,9 @@ export default function CoursesPage() {
                       </div>
                     </TableHead>
                     <TableHead>Véhicule</TableHead>
+                    <TableHead>Énergie</TableHead>
                     <TableHead>Conducteur</TableHead>
+                    <TableHead>Formations</TableHead>
                     <TableHead className="cursor-pointer" onClick={() => toggleSort("status")}>
                       <div className="flex items-center gap-1">
                         Statut
@@ -480,15 +530,17 @@ export default function CoursesPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1.5">
-                            <span className="font-medium text-sm">{course.client || "—"}</span>
                             {course.isSensitive && (
                               <Tooltip>
                                 <TooltipTrigger>
-                                  <Shield className="h-3.5 w-3.5 text-rose-500" />
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-violet-300 text-violet-700 bg-violet-50">
+                                    <Shield className="h-2.5 w-2.5 mr-0.5" />S
+                                  </Badge>
                                 </TooltipTrigger>
                                 <TooltipContent>Course sensible</TooltipContent>
                               </Tooltip>
                             )}
+                            <span className="font-medium text-sm">{course.client || "—"}</span>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -552,12 +604,48 @@ export default function CoursesPage() {
                           </div>
                         </TableCell>
                         <TableCell>
+                          {course.requiredVehicleEnergy ? (
+                            <Badge variant="outline" className={cn("text-[10px]",
+                              course.requiredVehicleEnergy === "Diesel" && "border-slate-300 text-slate-600",
+                              course.requiredVehicleEnergy === "Gaz" && "border-sky-300 text-sky-600",
+                              course.requiredVehicleEnergy === "Électrique" && "border-emerald-300 text-emerald-600"
+                            )}>
+                              <Fuel className="h-2.5 w-2.5 mr-0.5" />
+                              {course.requiredVehicleEnergy}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
                           <div className="flex items-center gap-1 text-xs">
                             <User className="h-3 w-3 text-muted-foreground" />
                             {course.assignedDriverName || (
                               <span className="text-muted-foreground italic">
                                 {course.requiredDriverType || "—"}
                               </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {course.requiredDriverSkills.length > 0 ? (
+                              course.requiredDriverSkills.map((skill) => (
+                                <Tooltip key={skill}>
+                                  <TooltipTrigger>
+                                    <Badge variant="outline" className={cn("text-[9px] px-1 py-0 h-4 font-medium",
+                                      skill === "Habilitation sûreté" && "border-violet-300 text-violet-700 bg-violet-50",
+                                      skill === "ADR" && "border-rose-300 text-rose-700 bg-rose-50",
+                                      skill === "Aéroportuaire" && "border-sky-300 text-sky-700 bg-sky-50"
+                                    )}>
+                                      {skill === "Habilitation sûreté" ? "HP" : skill === "Aéroportuaire" ? "FS" : skill}
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="text-xs">{skill}</TooltipContent>
+                                </Tooltip>
+                              ))
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
                             )}
                           </div>
                         </TableCell>
@@ -695,7 +783,7 @@ export default function CoursesPage() {
                       )}
 
                       {/* Missing resource indicator */}
-                      {course.missingResource && course.assignmentStatus === "unassigned" && (
+                      {course.missingResource && course.assignmentStatus === "non_affectee" && (
                         <div className="flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 rounded px-2 py-1">
                           <AlertTriangle className="h-3 w-3" />
                           {missingResourceLabel[course.missingResource] || course.missingResource}

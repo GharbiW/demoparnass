@@ -105,6 +105,12 @@ export function HealthTiles({ metrics, onTileClick }: HealthTilesProps) {
     : 0;
   const remainingCourses = metrics.coursesTotal - metrics.coursesPlaced;
 
+  // Dynamic colors based on progression
+  // Green if all issues resolved (impactedCourses === 0)
+  const absentDriversColor = totalImpactedByAbsence === 0 ? "emerald" : "rose";
+  const unavailableVehiclesColor = metrics.unavailableVehicles.impactedCourses === 0 ? "emerald" : "amber";
+  const placedCoursesColor = placedPercent > 80 ? "emerald" : placedPercent > 60 ? "amber" : "rose";
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
       {/* Resources */}
@@ -113,7 +119,7 @@ export function HealthTiles({ metrics, onTileClick }: HealthTilesProps) {
         label="Conducteurs absents"
         value={totalAbsent}
         detail={`${totalImpactedByAbsence} courses`}
-        color="rose"
+        color={absentDriversColor}
         onClick={() => onTileClick?.("absent_drivers")}
         tooltip={metrics.absentDrivers.map(d => `${d.type}: ${d.count} (${d.impactedCourses} courses)`).join(' | ')}
       />
@@ -123,7 +129,7 @@ export function HealthTiles({ metrics, onTileClick }: HealthTilesProps) {
         label="Véhicules indispos"
         value={metrics.unavailableVehicles.count}
         detail={`${metrics.unavailableVehicles.impactedCourses} courses`}
-        color="amber"
+        color={unavailableVehiclesColor}
         onClick={() => onTileClick?.("unavailable_vehicles")}
         tooltip={`${metrics.unavailableVehicles.count} véhicules initialement planifiés sont indisponibles`}
       />
@@ -134,7 +140,7 @@ export function HealthTiles({ metrics, onTileClick }: HealthTilesProps) {
         label="Courses placées"
         value={`${placedPercent}%`}
         detail={`${remainingCourses} restantes`}
-        color={placedPercent > 80 ? "emerald" : placedPercent > 60 ? "amber" : "rose"}
+        color={placedCoursesColor}
         onClick={() => onTileClick?.("unplaced")}
         tooltip={`${metrics.coursesPlaced}/${metrics.coursesTotal} | SUP: ${metrics.coursesSupToPlace} | Rég: ${metrics.coursesRegToPlace} | Sensibles: ${metrics.sensitivesToPlace}`}
       />

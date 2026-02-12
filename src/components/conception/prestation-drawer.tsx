@@ -229,8 +229,8 @@ export function PrestationDrawer({ prestation, open, onOpenChange, onAssign }: P
 
   if (!prestation) return null;
 
-  const unassignedCourses = prestation.courses.filter(c => c.assignmentStatus === 'unassigned');
-  const assignedCourses = prestation.courses.filter(c => c.assignmentStatus === 'assigned');
+  const unassignedCourses = prestation.courses.filter(c => c.assignmentStatus === 'non_affectee');
+  const assignedCourses = prestation.courses.filter(c => c.assignmentStatus === 'affectee');
 
   const handleCourseSelect = (courseId: string) => {
     setSelectedCourses(prev => {
@@ -364,7 +364,7 @@ export function PrestationDrawer({ prestation, open, onOpenChange, onAssign }: P
           <ScrollArea className="flex-1">
             <div className="px-6 py-4 space-y-3">
               {prestation.courses.map((course, index) => {
-                const isAssigned = course.assignmentStatus === 'assigned';
+                const isAssigned = course.assignmentStatus === 'affectee';
                 return (
                   <CourseItem
                     key={course.id}

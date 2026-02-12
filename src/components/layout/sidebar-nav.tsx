@@ -68,6 +68,10 @@ const conceptionMenuItems = [
     { href: '/conception/courses', label: 'Courses', icon: Route },
     { href: '/conception/sup', label: 'Créer un SUP', icon: CalendarCheck },
     { href: '/conception/conducteurs', label: 'Conducteurs', icon: Users2 },
+    { href: '/conception/vehicules', label: 'Véhicules', icon: Truck },
+    { href: '/conception/sous-traitants', label: 'Sous-traitants', icon: Building },
+    { href: '/conception/alertes', label: 'Règles d\'alertes', icon: AlertTriangle },
+    { href: '/conception/import', label: 'Import données', icon: FileText },
     { href: '/conception/reporting', label: 'Reporting', icon: LayoutDashboard },
 ]
 
@@ -134,6 +138,10 @@ export function SidebarNav() {
         if (href === '/anomalies') return pathname === '/anomalies';
         if (href === '/planning') return pathname === '/planning';
         if (href === '/conception/planning') return pathname === '/conception/planning';
+        if (href === '/conception/sous-traitants') return pathname.startsWith('/conception/sous-traitants');
+        if (href === '/conception/alertes') return pathname.startsWith('/conception/alertes');
+        if (href === '/conception/import') return pathname.startsWith('/conception/import');
+        if (href === '/conception/vehicules') return pathname.startsWith('/conception/vehicules');
         return pathname.startsWith(href);
     }
 
