@@ -15,10 +15,11 @@ import {
   validateAssignment,
   normalizeTrajetId,
 } from "@/lib/assignment-constraints";
-import { Calendar as CalendarIcon, ArrowRight, Clock, MapPin, Shield } from "lucide-react";
+import { Calendar as CalendarIcon, ArrowRight, Clock, MapPin, Shield, Building2 } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { CheckCircle, XCircle, AlertTriangle, Sparkles, Loader2, Truck, User, ChevronRight, ChevronDown, ChevronUp, Zap } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { weeklyAssignments } from "@/lib/a-placer-data-v2";
 import { getWeekKey } from "@/lib/assignment-constraints";
@@ -31,6 +32,16 @@ interface AssignCourseDialogProps {
   onAssign: (courseId: string, driverId: string, vehicleId: string) => void;
 }
 
+// Mock external providers
+const externalProviders = [
+  { id: "ext-001", name: "TransExpress Lyon", specialty: "Caisse mobile", zone: "Lyon / Rhône-Alpes", rating: 4.2 },
+  { id: "ext-002", name: "Logistique du Sud", specialty: "SPL", zone: "Marseille / PACA", rating: 3.8 },
+  { id: "ext-003", name: "NordTrans SARL", specialty: "Semi-remorque", zone: "Lille / Hauts-de-France", rating: 4.5 },
+  { id: "ext-004", name: "Frigoroute", specialty: "Frigo", zone: "National", rating: 4.0 },
+  { id: "ext-005", name: "ADR Solutions", specialty: "ADR", zone: "National", rating: 4.7 },
+  { id: "ext-006", name: "Partenaires Express IDF", specialty: "Polyvalent", zone: "Paris / Île-de-France", rating: 3.9 },
+];
+
 export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: AssignCourseDialogProps) {
   const { drivers, vehicles, trips } = useMockData();
   const { toast } = useToast();
@@ -41,6 +52,8 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [allowOverride, setAllowOverride] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
+  const [useExternalProvider, setUseExternalProvider] = useState(false);
+  const [selectedProviderId, setSelectedProviderId] = useState<string>('');
 
   useEffect(() => {
     if (course) {
@@ -48,6 +61,8 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
       setSelectedVehicleId('');
       setAiSuggestions([]);
       setAllowOverride(false);
+      setUseExternalProvider(false);
+      setSelectedProviderId('');
     }
   }, [course]);
 
@@ -122,7 +137,24 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
   };
 
   const handleSubmit = async () => {
-    if (!course || !selectedDriverId || !selectedVehicleId) {
+    if (!course) return;
+
+    if (useExternalProvider) {
+      if (!selectedProviderId) {
+        toast({ variant: "destructive", title: "Sélection incomplète", description: "Veuillez sélectionner un prestataire externe." });
+        return;
+      }
+      setIsSubmitting(true);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const provider = externalProviders.find(p => p.id === selectedProviderId);
+      onAssign(course.id, `ext:${selectedProviderId}`, "external");
+      toast({ title: "Sous-traitance confirmée", description: `Course confiée à ${provider?.name || "prestataire externe"}.` });
+      setIsSubmitting(false);
+      onOpenChange(false);
+      return;
+    }
+
+    if (!selectedDriverId || !selectedVehicleId) {
       toast({ variant: "destructive", title: "Sélection incomplète", description: "Veuillez sélectionner un chauffeur et un véhicule." });
       return;
     }
@@ -309,7 +341,62 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
 
             <Separator />
 
-            {/* Manual Assignment */}
+            {/* External Provider Toggle */}
+            <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-lg border bg-muted/30">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-600" />
+                <div>
+                  <p className="text-[10px] sm:text-xs font-medium">Prestataire externe</p>
+                  <p className="text-[9px] sm:text-[10px] text-muted-foreground">Confier à un sous-traitant</p>
+                </div>
+              </div>
+              <Switch
+                checked={useExternalProvider}
+                onCheckedChange={(val) => {
+                  setUseExternalProvider(val);
+                  if (val) { setSelectedDriverId(''); setSelectedVehicleId(''); }
+                  else { setSelectedProviderId(''); }
+                }}
+              />
+            </div>
+
+            {useExternalProvider ? (
+              /* External Provider Selection */
+              <div>
+                <div className="flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+                  <h3 className="text-xs sm:text-sm font-semibold">Sélectionner un prestataire</h3>
+                </div>
+                <Select value={selectedProviderId} onValueChange={setSelectedProviderId}>
+                  <SelectTrigger className="h-8 sm:h-9 text-xs sm:text-sm">
+                    <SelectValue placeholder="Choisir un prestataire externe..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {externalProviders.map(provider => (
+                      <SelectItem key={provider.id} value={provider.id}>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{provider.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {provider.specialty} · {provider.zone} · {provider.rating}/5
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedProviderId && (
+                  <div className="mt-2 p-2.5 rounded-lg border border-amber-200 bg-amber-50/50">
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle className="h-3 w-3 text-amber-500 flex-shrink-0" />
+                      <p className="text-[10px] sm:text-[11px] text-amber-700">
+                        La course sera marquée comme sous-traitée. Le suivi sera assuré via le module exploitation.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+            /* Manual Assignment (internal) */
+            <>
             <div>
               <div className="flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4">
                 <h3 className="text-xs sm:text-sm font-semibold">Assignation manuelle</h3>
@@ -469,6 +556,8 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
                 )}
               </div>
             )}
+            </>
+            )}
           </div>
         </div>
 
@@ -479,19 +568,22 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={!selectedDriverId || !selectedVehicleId || isSubmitting}
+            disabled={useExternalProvider ? !selectedProviderId || isSubmitting : !selectedDriverId || !selectedVehicleId || isSubmitting}
             size="sm"
             className="gap-1 sm:gap-1.5 text-[10px] sm:text-xs h-7 sm:h-8"
           >
             {isSubmitting ? (
               <>
                 <Loader2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 animate-spin" />
-                Assignation...
+                {useExternalProvider ? "Sous-traitance..." : "Assignation..."}
               </>
             ) : (
               <>
-                <CheckCircle className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                Assigner la course
+                {useExternalProvider ? (
+                  <><Building2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> Sous-traiter</>
+                ) : (
+                  <><CheckCircle className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> Assigner la course</>
+                )}
               </>
             )}
           </Button>

@@ -102,6 +102,31 @@ type SupStop = {
   type: "chargement" | "livraison" | "étape";
 };
 
+type ScheduleSlot = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  days: Record<string, boolean>; // L, Ma, Me, Je, Ve, Sa
+};
+
+const SCHEDULE_DAYS = [
+  { key: "L", label: "Lundi" },
+  { key: "Ma", label: "Mardi" },
+  { key: "Me", label: "Mercredi" },
+  { key: "Je", label: "Jeudi" },
+  { key: "Ve", label: "Vendredi" },
+  { key: "Sa", label: "Samedi" },
+] as const;
+
+function createEmptySlot(): ScheduleSlot {
+  return {
+    id: `slot-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    startTime: "06:00",
+    endTime: "14:00",
+    days: { L: true, Ma: true, Me: true, Je: true, Ve: true, Sa: false },
+  };
+}
+
 type SupDraft = {
   id: string;
   client: string;
@@ -205,6 +230,7 @@ export default function SupPage() {
     { id: "new-1", location: "", time: "", type: "chargement" },
     { id: "new-2", location: "", time: "", type: "livraison" },
   ]);
+  const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlot[]>([createEmptySlot()]);
 
   const resetForm = () => {
     setForm({
@@ -221,7 +247,34 @@ export default function SupPage() {
       { id: "new-1", location: "", time: "", type: "chargement" },
       { id: "new-2", location: "", time: "", type: "livraison" },
     ]);
+    setScheduleSlots([createEmptySlot()]);
   };
+
+  const addScheduleSlot = () => {
+    setScheduleSlots(prev => [...prev, createEmptySlot()]);
+  };
+
+  const removeScheduleSlot = (id: string) => {
+    if (scheduleSlots.length <= 1) return;
+    setScheduleSlots(prev => prev.filter(s => s.id !== id));
+  };
+
+  const updateScheduleSlot = (id: string, field: "startTime" | "endTime", value: string) => {
+    setScheduleSlots(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
+  };
+
+  const toggleScheduleDay = (slotId: string, dayKey: string) => {
+    setScheduleSlots(prev => prev.map(s =>
+      s.id === slotId ? { ...s, days: { ...s.days, [dayKey]: !s.days[dayKey] } } : s
+    ));
+  };
+
+  // Total courses that will be generated from the schedule matrix
+  const totalScheduledCourses = useMemo(() => {
+    return scheduleSlots.reduce((sum, slot) => {
+      return sum + Object.values(slot.days).filter(Boolean).length;
+    }, 0);
+  }, [scheduleSlots]);
 
   const addStop = () => {
     setStops((prev) => [
@@ -270,9 +323,10 @@ export default function SupPage() {
     setSups((prev) => [newSup, ...prev]);
     setIsCreateOpen(false);
     resetForm();
+    const scheduleInfo = totalScheduledCourses > 1 ? ` (${totalScheduledCourses} courses sur ${scheduleSlots.length} créneau(x))` : "";
     toast({
       title: asDraft ? "Brouillon enregistré" : "SUP soumise",
-      description: `${newSup.id} — ${form.client} — ${format(new Date(form.date), "dd MMM yyyy", { locale: fr })}`,
+      description: `${newSup.id} — ${form.client} — ${format(new Date(form.date), "dd MMM yyyy", { locale: fr })}${scheduleInfo}`,
     });
   };
 
@@ -651,6 +705,111 @@ export default function SupPage() {
                     className="h-20 text-sm"
                   />
                 </div>
+              </div>
+
+              {/* ─── Schedule Matrix (Horaires + Jours) ───────────────────── */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-amber-500" />
+                    Matrice horaire
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-[10px]">
+                      {totalScheduledCourses} course{totalScheduledCourses > 1 ? "s" : ""} générée{totalScheduledCourses > 1 ? "s" : ""}
+                    </Badge>
+                    <Button variant="outline" size="sm" onClick={addScheduleSlot} className="gap-1 h-7 text-xs">
+                      <Plus className="h-3 w-3" />
+                      Ajouter un créneau
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground -mt-1">
+                  Définissez les créneaux horaires et les jours d&apos;exécution. Un même trajet peut avoir des horaires différents selon les jours.
+                </p>
+
+                <div className="space-y-3">
+                  {scheduleSlots.map((slot, slotIdx) => (
+                    <div
+                      key={slot.id}
+                      className="p-3 rounded-lg border bg-muted/20 space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[10px] font-mono h-5">
+                            Créneau {slotIdx + 1}
+                          </Badge>
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              type="time"
+                              value={slot.startTime}
+                              onChange={(e) => updateScheduleSlot(slot.id, "startTime", e.target.value)}
+                              className="h-7 text-xs w-[100px]"
+                            />
+                            <span className="text-xs text-muted-foreground">→</span>
+                            <Input
+                              type="time"
+                              value={slot.endTime}
+                              onChange={(e) => updateScheduleSlot(slot.id, "endTime", e.target.value)}
+                              className="h-7 text-xs w-[100px]"
+                            />
+                          </div>
+                        </div>
+                        {scheduleSlots.length > 1 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            onClick={() => removeScheduleSlot(slot.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
+                        )}
+                      </div>
+
+                      {/* Day checkboxes */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-muted-foreground mr-1">Jours:</span>
+                        {SCHEDULE_DAYS.map(day => {
+                          const active = slot.days[day.key];
+                          return (
+                            <button
+                              key={day.key}
+                              type="button"
+                              onClick={() => toggleScheduleDay(slot.id, day.key)}
+                              className={cn(
+                                "inline-flex items-center justify-center w-8 h-6 rounded text-[10px] font-semibold transition-colors border",
+                                active
+                                  ? "bg-sky-100 text-sky-700 border-sky-300 hover:bg-sky-200"
+                                  : "bg-slate-50 text-slate-300 border-slate-100 hover:bg-slate-100 hover:text-slate-500"
+                              )}
+                            >
+                              {day.key}
+                            </button>
+                          );
+                        })}
+                        <span className="text-[10px] text-muted-foreground ml-2">
+                          ({Object.values(slot.days).filter(Boolean).length} jour{Object.values(slot.days).filter(Boolean).length > 1 ? "s" : ""})
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Summary */}
+                {scheduleSlots.length > 1 && (
+                  <div className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/50 text-xs text-amber-700 flex items-start gap-2">
+                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-medium">
+                        {scheduleSlots.length} créneaux horaires × jours sélectionnés = {totalScheduledCourses} courses
+                      </p>
+                      <p className="text-[10px] text-amber-600 mt-0.5">
+                        Chaque combinaison créneau/jour génère une course distincte dans le planning.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* AI Suggestion */}

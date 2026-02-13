@@ -1,7 +1,7 @@
 import { Course, Tournee, PlanningHealthMetrics, PlanningVersion } from './types';
 import { drivers } from './planning-data';
 import { vehicles as allVehicleDetails } from './vehicles-data';
-import { addDays, format, startOfWeek, addHours, addMinutes } from 'date-fns';
+import { addDays, addWeeks, format, startOfWeek, addHours, addMinutes } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
 const sample = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -182,6 +182,47 @@ function generateTournees(): Tournee[] {
   let tourneeIndex = 1;
   const siteTourneeCounts = new Map<string, number>();
 
+  // Determine which tourneeIds will be dual-driver (~20%, with at least 3 guaranteed per visible day)
+  const allTourneeKeys = Array.from(grouped.keys());
+
+  // Sort keys so that keys with the most courses and with assigned drivers come first
+  // This ensures the "guaranteed" dual-driver tournées are viable ones
+  const viableKeys = allTourneeKeys.filter(key => {
+    const courses = grouped.get(key)!;
+    return courses.length >= 2 && !!courses[0].assignedDriverId;
+  });
+
+  // Group viable keys by date to ensure each visible day has dual-driver examples
+  const viableByDate = new Map<string, string[]>();
+  viableKeys.forEach(key => {
+    const courses = grouped.get(key)!;
+    const date = courses[0].date;
+    if (!viableByDate.has(date)) viableByDate.set(date, []);
+    viableByDate.get(date)!.push(key);
+  });
+
+  // Guarantee at least 3 dual-driver tournées per day (when viable keys available)
+  const guaranteedDualDriver = new Set<string>();
+  viableByDate.forEach((keys) => {
+    const count = Math.min(3, keys.length);
+    for (let i = 0; i < count; i++) {
+      guaranteedDualDriver.add(keys[i]);
+    }
+  });
+
+  // Add random ~15% from the rest
+  const dualDriverCandidates = new Set(guaranteedDualDriver);
+  allTourneeKeys.forEach(key => {
+    if (!dualDriverCandidates.has(key) && Math.random() < 0.15) {
+      const courses = grouped.get(key)!;
+      if (courses.length >= 2 && !!courses[0].assignedDriverId) {
+        dualDriverCandidates.add(key);
+      }
+    }
+  });
+
+  const dualDriverKeys = dualDriverCandidates;
+
   grouped.forEach((courses, key) => {
     const [tourneeId, date] = key.split('-').length > 3
       ? [key.substring(0, key.lastIndexOf('-', key.lastIndexOf('-') - 1)), key.substring(key.lastIndexOf('-', key.lastIndexOf('-') - 1) + 1)]
@@ -204,6 +245,36 @@ function generateTournees(): Tournee[] {
       kmFromBase: 5 + Math.floor(Math.random() * 20), // 5-25 km from base
     } : undefined;
 
+    // Dual-driver (12h tour) support — ~15% of assigned tournées
+    const isDualDriver = dualDriverKeys.has(key) && courses.length >= 2 && !!firstCourse.assignedDriverId;
+    let driver2: typeof drivers[0] | undefined;
+    if (isDualDriver) {
+      // Pick a different active driver as second driver
+      driver2 = sample(drivers.filter(d => d.status === 'Actif' && d.id !== firstCourse.assignedDriverId));
+      // Tag courses with driver slots — first half → A, second half → B
+      const sortedCourses = courses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+      const midIdx = Math.ceil(sortedCourses.length / 2);
+      sortedCourses.forEach((c, i) => {
+        c.isDualDriver = true;
+        c.driverSlot = i < midIdx ? 'A' : 'B';
+        // Update driver assignment for slot B courses
+        if (c.driverSlot === 'B' && driver2) {
+          c.assignedDriverId = driver2.id;
+          c.assignedDriverName = driver2.name;
+        }
+      });
+    }
+
+    // Generate days of week for repetition tracking
+    const dayOfWeek = new Date(firstCourse.date).getDay();
+    const dayMap: Record<number, string> = { 1: 'Lu', 2: 'Ma', 3: 'Me', 4: 'Je', 5: 'Ve', 6: 'Sa', 0: 'Di' };
+    // Most tours repeat Mon-Fri, some include Saturday
+    const daysOfWeek = Math.random() > 0.3
+      ? ['Lu', 'Ma', 'Me', 'Je', 'Ve']
+      : Math.random() > 0.5
+        ? ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa']
+        : [dayMap[dayOfWeek] || 'Lu'];
+
     tournees.push({
       id: firstCourse.tourneeId || tourneeId,
       number: firstCourse.tourneeNumber || `Tour ${tourneeId.replace('T-', '')}`,
@@ -215,6 +286,11 @@ function generateTournees(): Tournee[] {
       driverId: firstCourse.assignedDriverId,
       driverName: firstCourse.assignedDriverName,
       driverType: firstCourse.requiredDriverType,
+      isDualDriver: isDualDriver || false,
+      driver2Id: driver2?.id,
+      driver2Name: driver2?.name,
+      driver2Type: driver2?.driverType,
+      daysOfWeek,
       courses: courses.sort((a, b) => a.startTime.localeCompare(b.startTime)),
       date: firstCourse.date,
       status: 'draft',
@@ -250,6 +326,7 @@ function generateTournees(): Tournee[] {
         // No vehicleId or driverId - tournée created without resources
         vehicleType: firstCourse.requiredVehicleType,
         vehicleEnergy: firstCourse.requiredVehicleEnergy,
+        daysOfWeek: ['Lu', 'Ma', 'Me', 'Je', 'Ve'],
         courses: reqCourses.sort((a, b) => a.startTime.localeCompare(b.startTime)),
         date: firstCourse.date,
         status: 'draft',
@@ -472,10 +549,30 @@ export function getVehicleAvailability(targetDate?: string): VehicleAvailability
 // ─── Plan vs Real (Simulated) ────────────────────────────────────────────────
 // Simulated comparison of planned vs actual execution data
 
+export type EcartType = 'conducteur' | 'vehicule' | 'horaire' | 'lieu' | 'annulation' | 'date' | 'rse';
+export type GraviteLevel = 'mineur' | 'majeur' | 'annule';
+export type EcartReason =
+  | 'absence_conducteur'
+  | 'panne_vehicule'
+  | 'probleme_site'
+  | 'annulation_demande_client'
+  | 'annulation_operationnel_parnass'
+  | 'annulation_empechement_exterieur'
+  | 'retard_cascade'
+  | 'alea_externe'
+  | 'retard_demarrage'
+  | 'modification_demande_client'
+  | 'ecart_rse'
+  | 'non_renseigne';
+
 export interface PlanVsRealEntry {
   courseId: string;
   client: string;
   date: string;
+  tourneeId?: string;
+  tourneeNumber?: string;
+  product: 'CM' | 'SPL' | 'VL' | 'PO';
+  codeArticle?: string;
   planned: {
     startTime: string;
     endTime: string;
@@ -500,6 +597,11 @@ export interface PlanVsRealEntry {
     locationChanged: boolean;
   };
   status: 'on_time' | 'minor_delay' | 'major_delay' | 'cancelled' | 'modified';
+  ecartType?: EcartType;
+  gravite?: GraviteLevel;
+  ecartReason: EcartReason;
+  retardMinutes?: number; // delay in minutes for non-conforming rides
+  isConforme: boolean;
 }
 
 export interface PlanVsRealSummary {
@@ -515,46 +617,153 @@ export interface PlanVsRealSummary {
   vehicleChangeRate: number;
   onTimeRate: number; // percentage
   entries: PlanVsRealEntry[];
+  // New aggregated data
+  conformeCount: number;
+  ecartCount: number;
+  conformeRate: number; // percentage
+  avgRetard: number; // average delay in minutes for rides with delay
+  // 6-week trend
+  weeklyTrend: { week: string; conformeRate: number; total: number }[];
+  // Tournee breakdown
+  tourneeEcarts: { tourneeNumber: string; ecartCount: number; totalCourses: number }[];
+  // Ecart type breakdown
+  ecartTypeBreakdown: Record<EcartType, number>;
+  // Gravite breakdown
+  graviteBreakdown: Record<GraviteLevel, number>;
+  // Reason breakdown
+  reasonBreakdown: Record<EcartReason, number>;
+  reasonCompletude: number; // % of reasons that are not 'non_renseigne'
 }
 
 export function getPlanVsRealData(): PlanVsRealSummary {
-  // Simulate data for completed courses (current week courses that are "in the past")
+  // Use deterministic seed-like approach with index for consistent results
   const now = new Date();
   const pastCourses = planningCourses
     .filter(c => {
       const courseDate = new Date(c.date);
-      return courseDate < now && c.assignmentStatus === 'affectee';
+      return courseDate < now && c.assignmentStatus === 'affectee' && c.prestationType !== 'sup';
     })
-    .slice(0, 50); // Take a manageable sample
+    .slice(0, 80); // Larger sample for richer data
 
-  const entries: PlanVsRealEntry[] = pastCourses.map(c => {
-    // Simulate deviations
-    const startDev = Math.floor(Math.random() * 30) - 5; // -5 to +25 min
-    const endDev = Math.floor(Math.random() * 40) - 10; // -10 to +30 min
-    const driverChanged = Math.random() > 0.88; // ~12% driver changes
-    const vehicleChanged = Math.random() > 0.92; // ~8% vehicle changes
+  const productMap: Record<string, 'CM' | 'SPL' | 'VL' | 'PO'> = {
+    'Caisse mobile': 'CM', 'SPL': 'SPL', 'VL': 'VL', 'Semi-remorque': 'PO', 'Frigo': 'CM', 'ADR': 'SPL',
+  };
+  const codeArticles = ['ART-1001', 'ART-1023', 'ART-2045', 'ART-3067', 'ART-4089', 'ART-5012', 'ART-6034'];
+  const ecartTypes: EcartType[] = ['conducteur', 'vehicule', 'horaire', 'lieu', 'annulation', 'date', 'rse'];
+  const ecartReasons: EcartReason[] = [
+    'absence_conducteur', 'panne_vehicule', 'probleme_site', 'annulation_demande_client',
+    'annulation_operationnel_parnass', 'annulation_empechement_exterieur', 'retard_cascade',
+    'alea_externe', 'retard_demarrage', 'modification_demande_client', 'non_renseigne',
+  ];
+
+  // Weighted distributions to match spec percentages
+  // Ecart types: Conducteur 35%, Vehicule 25%, Horaire 20%, Lieu 10%, Annulation 10%
+  const ecartTypeWeights: { type: EcartType; weight: number }[] = [
+    { type: 'conducteur', weight: 35 }, { type: 'vehicule', weight: 25 },
+    { type: 'horaire', weight: 20 }, { type: 'lieu', weight: 10 },
+    { type: 'annulation', weight: 10 },
+  ];
+  const pickEcartType = (idx: number): EcartType => {
+    const roll = ((idx * 17 + 7) % 100);
+    let cumulative = 0;
+    for (const w of ecartTypeWeights) {
+      cumulative += w.weight;
+      if (roll < cumulative) return w.type;
+    }
+    return 'horaire';
+  };
+
+  // Gravite: Mineur 52%, Majeur 38%, Annulé 10%
+  const pickGravite = (idx: number, isCancelled: boolean): GraviteLevel => {
+    if (isCancelled) return 'annule';
+    const roll = ((idx * 31 + 13) % 100);
+    if (roll < 52) return 'mineur';
+    if (roll < 90) return 'majeur';
+    return 'annule';
+  };
+
+  // Reason: weighted
+  const reasonWeights: { reason: EcartReason; weight: number }[] = [
+    { reason: 'absence_conducteur', weight: 28 }, { reason: 'panne_vehicule', weight: 22 },
+    { reason: 'probleme_site', weight: 15 }, { reason: 'annulation_demande_client', weight: 10 },
+    { reason: 'non_renseigne', weight: 25 },
+  ];
+  const pickReason = (idx: number, ecartType: EcartType): EcartReason => {
+    if (ecartType === 'annulation') {
+      const annulReasons: EcartReason[] = ['annulation_demande_client', 'annulation_operationnel_parnass', 'annulation_empechement_exterieur'];
+      return annulReasons[idx % 3];
+    }
+    if (ecartType === 'conducteur') return idx % 3 === 0 ? 'non_renseigne' : 'absence_conducteur';
+    if (ecartType === 'vehicule') return idx % 4 === 0 ? 'non_renseigne' : 'panne_vehicule';
+    if (ecartType === 'horaire') {
+      const hReasons: EcartReason[] = ['retard_cascade', 'alea_externe', 'retard_demarrage', 'non_renseigne'];
+      return hReasons[idx % 4];
+    }
+    if (ecartType === 'lieu') return idx % 3 === 0 ? 'non_renseigne' : 'modification_demande_client';
+    const roll = ((idx * 23 + 5) % 100);
+    let cumulative = 0;
+    for (const w of reasonWeights) {
+      cumulative += w.weight;
+      if (roll < cumulative) return w.reason;
+    }
+    return 'non_renseigne';
+  };
+
+  const entries: PlanVsRealEntry[] = pastCourses.map((c, idx) => {
+    // Deterministic deviations using index
+    const startDev = ((idx * 7 + 3) % 35) - 5; // -5 to +29 min
+    const endDev = ((idx * 11 + 5) % 45) - 10; // -10 to +34 min
+    const driverChanged = (idx * 13 + 2) % 8 === 0; // ~12.5%
+    const vehicleChanged = (idx * 17 + 3) % 12 === 0; // ~8.3%
+    const locationChanged = (idx * 19 + 1) % 20 === 0; // ~5%
+
+    // ~18% non-conforme, ~82% conforme
+    const isConforme = ((idx * 23 + 11) % 100) >= 18;
 
     let status: PlanVsRealEntry['status'] = 'on_time';
-    if (Math.random() > 0.95) status = 'cancelled';
-    else if (Math.random() > 0.9) status = 'modified';
-    else if (Math.abs(startDev) > 15 || Math.abs(endDev) > 20) status = 'major_delay';
-    else if (Math.abs(startDev) > 5 || Math.abs(endDev) > 10) status = 'minor_delay';
+    let ecartType: EcartType | undefined;
+    let gravite: GraviteLevel | undefined;
+    let retardMinutes: number | undefined;
+
+    if (!isConforme) {
+      ecartType = pickEcartType(idx);
+      if (ecartType === 'annulation') {
+        status = 'cancelled';
+        gravite = 'annule';
+        retardMinutes = undefined;
+      } else {
+        gravite = pickGravite(idx, false);
+        if (gravite === 'mineur') {
+          status = 'minor_delay';
+          retardMinutes = 5 + ((idx * 3) % 10); // 5-14 min (DHL orange zone)
+        } else {
+          status = 'major_delay';
+          retardMinutes = 15 + ((idx * 7) % 30); // 15-44 min (DHL red zone)
+        }
+      }
+    }
+
+    const ecartReason = isConforme ? 'non_renseigne' : pickReason(idx, ecartType!);
 
     // Simulate actual times with deviations
     const [ph, pm] = c.startTime.split(':').map(Number);
     const [eh, em] = c.endTime.split(':').map(Number);
-    const actualStartMin = ph * 60 + pm + startDev;
-    const actualEndMin = eh * 60 + em + endDev;
+    const actualStartMin = isConforme ? ph * 60 + pm : ph * 60 + pm + (retardMinutes || startDev);
+    const actualEndMin = isConforme ? eh * 60 + em : eh * 60 + em + (retardMinutes || endDev);
     const actualStartTime = `${String(Math.floor(Math.max(0, actualStartMin) / 60) % 24).padStart(2, '0')}:${String(Math.max(0, actualStartMin) % 60).padStart(2, '0')}`;
     const actualEndTime = `${String(Math.floor(Math.max(0, actualEndMin) / 60) % 24).padStart(2, '0')}:${String(Math.max(0, actualEndMin) % 60).padStart(2, '0')}`;
 
-    const altDriver = driverChanged ? sample(drivers.filter(d => d.status === 'Actif')) : undefined;
-    const altVehicle = vehicleChanged ? sample(allVehicleDetails.filter(v => v.statut === 'Disponible' || v.statut === 'En mission')) : undefined;
+    const altDriver = driverChanged && !isConforme ? sample(drivers.filter(d => d.status === 'Actif')) : undefined;
+    const altVehicle = vehicleChanged && !isConforme ? sample(allVehicleDetails.filter(v => v.statut === 'Disponible' || v.statut === 'En mission')) : undefined;
 
     return {
       courseId: c.id,
       client: c.client || 'N/A',
       date: c.date,
+      tourneeId: c.tourneeId,
+      tourneeNumber: c.tourneeNumber,
+      product: productMap[c.requiredVehicleType] || 'CM',
+      codeArticle: codeArticles[idx % codeArticles.length],
       planned: {
         startTime: c.startTime,
         endTime: c.endTime,
@@ -564,29 +773,41 @@ export function getPlanVsRealData(): PlanVsRealSummary {
         vehicleImmat: c.assignedVehicleImmat,
       },
       actual: {
-        startTime: actualStartTime,
-        endTime: actualEndTime,
-        startLocation: c.startLocation,
-        endLocation: c.endLocation,
-        driverName: driverChanged ? altDriver?.name || c.assignedDriverName : c.assignedDriverName,
-        vehicleImmat: vehicleChanged ? altVehicle?.immatriculation || c.assignedVehicleImmat : c.assignedVehicleImmat,
+        startTime: status === 'cancelled' ? '—' : actualStartTime,
+        endTime: status === 'cancelled' ? '—' : actualEndTime,
+        startLocation: locationChanged ? 'Lieu modifié' : c.startLocation,
+        endLocation: locationChanged ? 'Lieu modifié' : c.endLocation,
+        driverName: (driverChanged && !isConforme) ? (altDriver?.name || c.assignedDriverName) : c.assignedDriverName,
+        vehicleImmat: (vehicleChanged && !isConforme) ? (altVehicle?.immatriculation || c.assignedVehicleImmat) : c.assignedVehicleImmat,
       },
       deviations: {
-        startTimeDeviation: startDev,
-        endTimeDeviation: endDev,
-        driverChanged,
-        vehicleChanged,
-        locationChanged: false,
+        startTimeDeviation: isConforme ? 0 : (retardMinutes || startDev),
+        endTimeDeviation: isConforme ? 0 : (retardMinutes || endDev),
+        driverChanged: driverChanged && !isConforme,
+        vehicleChanged: vehicleChanged && !isConforme,
+        locationChanged: locationChanged && !isConforme,
       },
       status,
+      ecartType,
+      gravite,
+      ecartReason,
+      retardMinutes,
+      isConforme,
     };
   });
 
+  const conformeCount = entries.filter(e => e.isConforme).length;
+  const ecartCount = entries.filter(e => !e.isConforme).length;
   const onTime = entries.filter(e => e.status === 'on_time').length;
   const minorDelay = entries.filter(e => e.status === 'minor_delay').length;
   const majorDelay = entries.filter(e => e.status === 'major_delay').length;
   const cancelled = entries.filter(e => e.status === 'cancelled').length;
   const modified = entries.filter(e => e.status === 'modified').length;
+
+  const delayEntries = entries.filter(e => e.retardMinutes && e.retardMinutes > 0);
+  const avgRetard = delayEntries.length > 0
+    ? Math.round(delayEntries.reduce((s, e) => s + (e.retardMinutes || 0), 0) / delayEntries.length)
+    : 0;
 
   const avgStartDev = entries.length > 0
     ? Math.round(entries.reduce((s, e) => s + e.deviations.startTimeDeviation, 0) / entries.length)
@@ -602,6 +823,56 @@ export function getPlanVsRealData(): PlanVsRealSummary {
     ? Math.round((entries.filter(e => e.deviations.vehicleChanged).length / entries.length) * 100)
     : 0;
 
+  // 6-week trend (simulated)
+  const weeklyTrend: PlanVsRealSummary['weeklyTrend'] = [];
+  for (let w = 5; w >= 0; w--) {
+    const weekDate = addWeeks(now, -w);
+    const weekLabel = `S${format(weekDate, 'w', { locale: fr })}`;
+    const total = 130 + ((w * 17 + 3) % 40);
+    const confRate = w === 0 ? Math.round((conformeCount / Math.max(entries.length, 1)) * 100) : (72 + ((w * 7) % 18));
+    weeklyTrend.push({ week: weekLabel, conformeRate: confRate, total });
+  }
+
+  // Tournee écarts
+  const tourneeMap = new Map<string, { ecartCount: number; totalCourses: number }>();
+  entries.forEach(e => {
+    const tNum = e.tourneeNumber || 'Sans tournée';
+    if (!tourneeMap.has(tNum)) tourneeMap.set(tNum, { ecartCount: 0, totalCourses: 0 });
+    const t = tourneeMap.get(tNum)!;
+    t.totalCourses++;
+    if (!e.isConforme) t.ecartCount++;
+  });
+  const tourneeEcarts = Array.from(tourneeMap.entries())
+    .map(([tourneeNumber, d]) => ({ tourneeNumber, ...d }))
+    .filter(t => t.ecartCount > 0)
+    .sort((a, b) => b.ecartCount - a.ecartCount)
+    .slice(0, 10);
+
+  // Ecart type breakdown
+  const ecartTypeBreakdown: Record<EcartType, number> = { conducteur: 0, vehicule: 0, horaire: 0, lieu: 0, annulation: 0, date: 0, rse: 0 };
+  entries.filter(e => !e.isConforme && e.ecartType).forEach(e => {
+    ecartTypeBreakdown[e.ecartType!]++;
+  });
+
+  // Gravite breakdown
+  const graviteBreakdown: Record<GraviteLevel, number> = { mineur: 0, majeur: 0, annule: 0 };
+  entries.filter(e => !e.isConforme && e.gravite).forEach(e => {
+    graviteBreakdown[e.gravite!]++;
+  });
+
+  // Reason breakdown
+  const reasonBreakdown: Record<EcartReason, number> = {
+    absence_conducteur: 0, panne_vehicule: 0, probleme_site: 0,
+    annulation_demande_client: 0, annulation_operationnel_parnass: 0, annulation_empechement_exterieur: 0,
+    retard_cascade: 0, alea_externe: 0, retard_demarrage: 0,
+    modification_demande_client: 0, ecart_rse: 0, non_renseigne: 0,
+  };
+  entries.filter(e => !e.isConforme).forEach(e => {
+    reasonBreakdown[e.ecartReason]++;
+  });
+  const totalNonConf = ecartCount || 1;
+  const reasonCompletude = Math.round(((totalNonConf - (reasonBreakdown.non_renseigne || 0)) / totalNonConf) * 100);
+
   return {
     totalCompared: entries.length,
     onTime,
@@ -615,5 +886,15 @@ export function getPlanVsRealData(): PlanVsRealSummary {
     vehicleChangeRate,
     onTimeRate: entries.length > 0 ? Math.round((onTime / entries.length) * 100) : 100,
     entries,
+    conformeCount,
+    ecartCount,
+    conformeRate: entries.length > 0 ? Math.round((conformeCount / entries.length) * 100) : 100,
+    avgRetard,
+    weeklyTrend,
+    tourneeEcarts,
+    ecartTypeBreakdown,
+    graviteBreakdown,
+    reasonBreakdown,
+    reasonCompletude,
   };
 }

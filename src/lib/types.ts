@@ -122,6 +122,9 @@ export type Course = {
   assignedVehicleImmat?: string;
   tourneeId?: string; // If assigned to a tournée
   tourneeNumber?: string; // Tournée number for display
+  // Dual-driver (12h tour) support
+  isDualDriver?: boolean; // true if this course is part of a 12h dual-driver tour
+  driverSlot?: 'A' | 'B'; // Which driver slot this course belongs to
   // Constraints
   isSensitive: boolean;
   requiredVehicleType: 'Semi-remorque' | 'Caisse mobile' | 'Frigo' | 'ADR' | 'SPL' | 'VL';
@@ -271,6 +274,13 @@ export type Tournee = {
   driverId?: string; // Optional - can create tournée without driver
   driverName?: string;
   driverType?: string;
+  // Dual-driver (12h tour) support
+  isDualDriver?: boolean; // true if this is a 12h tour with 2 drivers
+  driver2Id?: string; // Second driver ID
+  driver2Name?: string; // Second driver name
+  driver2Type?: string; // Second driver type
+  // Repetition tracking
+  daysOfWeek?: string[]; // e.g., ['Lu', 'Ma', 'Me', 'Je', 'Ve']
   courses: Course[];
   date: string; // YYYY-MM-DD
   status: 'draft' | 'published' | 'in_progress' | 'completed';

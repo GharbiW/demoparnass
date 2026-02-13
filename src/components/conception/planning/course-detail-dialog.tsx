@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { Separator } from "@/components/ui/separator";
 import {
   Select,
@@ -218,7 +218,7 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave, tournee
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!grid-cols-1 max-w-3xl max-h-[85vh] !overflow-hidden flex flex-col">
+      <DialogContent className="!grid !grid-cols-1 !grid-rows-[auto_1fr_auto] max-w-3xl max-h-[85vh] !overflow-hidden">
         <DialogHeader className="shrink-0">
           <div className="flex items-center gap-2">
             <DialogTitle className="text-base">{course.id}</DialogTitle>
@@ -235,7 +235,7 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave, tournee
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col min-h-0 overflow-hidden">
           <TabsList className="grid grid-cols-5 shrink-0">
             <TabsTrigger value="details" className="text-xs"><Package className="h-3 w-3 mr-1" />Détails</TabsTrigger>
             <TabsTrigger value="assignment" className="text-xs"><User className="h-3 w-3 mr-1" />Affectation</TabsTrigger>
@@ -244,7 +244,7 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave, tournee
             <TabsTrigger value="comments" className="text-xs"><MessageSquare className="h-3 w-3 mr-1" />Notes</TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="flex-1 min-h-0 mt-3">
+          <div className="flex-1 min-h-0 mt-3 overflow-y-auto">
             {/* ─── Details Tab ─── */}
             <TabsContent value="details" className="mt-0 space-y-4 px-1">
               <div className="grid grid-cols-2 gap-4">
@@ -686,7 +686,7 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave, tournee
                 </Button>
               </div>
             </TabsContent>
-          </ScrollArea>
+          </div>
         </Tabs>
 
         {/* Save CTA */}

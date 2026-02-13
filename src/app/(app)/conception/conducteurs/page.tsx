@@ -4,7 +4,10 @@ import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { DialogFooter } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -66,9 +69,13 @@ import {
   TrendingDown,
   Filter,
   Download,
+  ArrowRightLeft,
+  CalendarOff,
+  CalendarCheck,
 } from "lucide-react";
 import { drivers } from "@/lib/planning-data";
-import { planningCourses } from "@/lib/conception-planning-data";
+import { planningCourses, planningTournees } from "@/lib/conception-planning-data";
+import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, startOfWeek, endOfWeek, addDays, differenceInHours } from "date-fns";
 import { fr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -90,9 +97,13 @@ type DriverConception = {
   amplitudeStatus: "ok" | "warning" | "critical";
   skills: string[];
   availability: "available" | "partial" | "unavailable";
+  manualAvailability?: { available: boolean; from?: string; to?: string };
+  miseADispoSchedule?: { day: string; from: string; to: string; active: boolean }[];
   lastAssignment?: string;
   scoreSecurite: number;
   scoreEco: number;
+  isDualDriverTour: boolean; // Participates in a dual-driver tour
+  dualDriverTourneeCode?: string;
 };
 
 // Build driver conception data
@@ -157,6 +168,11 @@ function buildDriverConceptionData(): DriverConception[] {
     else if (d.status === "En repos") availability = "partial";
     else if (hoursThisWeek > maxHours * 0.9) availability = "partial";
 
+    // Check if driver participates in a dual-driver tour
+    const dualTournee = planningTournees.find(
+      t => t.isDualDriver && (t.driverId === d.id || t.driver2Id === d.id)
+    );
+
     return {
       id: d.id,
       name: d.name,
@@ -175,6 +191,8 @@ function buildDriverConceptionData(): DriverConception[] {
       lastAssignment: thisWeekCourses.length > 0 ? thisWeekCourses[thisWeekCourses.length - 1]?.date : undefined,
       scoreSecurite: d.scoreSecurite || Math.floor(Math.random() * 20) + 80,
       scoreEco: d.scoreEco || Math.floor(Math.random() * 20) + 80,
+      isDualDriverTour: !!dualTournee,
+      dualDriverTourneeCode: dualTournee?.tourneeCode,
     };
   });
 }
@@ -209,6 +227,11 @@ export default function ConducteursPage() {
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [selectedDriver, setSelectedDriver] = useState<DriverConception | null>(null);
+  const [replacementDialogOpen, setReplacementDialogOpen] = useState(false);
+  const [driverToReplace, setDriverToReplace] = useState<DriverConception | null>(null);
+  const [manualAvailDialogOpen, setManualAvailDialogOpen] = useState(false);
+  const [driverForAvail, setDriverForAvail] = useState<DriverConception | null>(null);
+  const { toast } = useToast();
 
   const sites = useMemo(() => [...new Set(allDrivers.map((d) => d.site))].sort(), [allDrivers]);
   const driverTypes = useMemo(() => [...new Set(allDrivers.map((d) => d.driverType))].sort(), [allDrivers]);
@@ -266,9 +289,75 @@ export default function ConducteursPage() {
     avgHours: Math.round(allDrivers.reduce((s, d) => s + d.hoursThisWeek, 0) / allDrivers.length * 10) / 10,
   }), [allDrivers]);
 
+  // Stats by driver type (CM, SPL, Polyvalent, etc.)
+  const statsByType = useMemo(() => {
+    const typeMap = new Map<string, { type: string; total: number; available: number; partial: number; unavailable: number; courses: number }>();
+    allDrivers.forEach(d => {
+      if (!typeMap.has(d.driverType)) {
+        typeMap.set(d.driverType, { type: d.driverType, total: 0, available: 0, partial: 0, unavailable: 0, courses: 0 });
+      }
+      const entry = typeMap.get(d.driverType)!;
+      entry.total++;
+      entry.courses += d.coursesThisWeek;
+      if (d.availability === "available") entry.available++;
+      else if (d.availability === "partial") entry.partial++;
+      else entry.unavailable++;
+    });
+    return Array.from(typeMap.values()).sort((a, b) => b.total - a.total);
+  }, [allDrivers]);
+
   // Driver's courses for detail view
   const getDriverCourses = (driverId: string) => {
     return planningCourses.filter((c) => c.assignedDriverId === driverId).sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+  };
+
+  // Get compatible replacement drivers
+  const getCompatibleDrivers = (driver: DriverConception) => {
+    return allDrivers.filter(d =>
+      d.id !== driver.id &&
+      d.availability === "available" &&
+      d.driverType === driver.driverType &&
+      d.site === driver.site &&
+      d.amplitudeStatus !== "critical"
+    );
+  };
+
+  const handleReplacement = (replacementId: string) => {
+    const replacement = allDrivers.find(d => d.id === replacementId);
+    toast({
+      title: "Remplacement effectué",
+      description: `${driverToReplace?.name} remplacé par ${replacement?.name}.`,
+    });
+    setReplacementDialogOpen(false);
+    setDriverToReplace(null);
+  };
+
+  // Per-day mise à dispo schedule state
+  const DAYS_OF_WEEK = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"] as const;
+  const defaultSchedule = DAYS_OF_WEEK.map(day => ({ day, from: "06:00", to: "14:00", active: true }));
+  const [miseADispoSchedule, setMiseADispoSchedule] = useState(defaultSchedule);
+
+  const updateScheduleDay = (dayIndex: number, field: "from" | "to" | "active", value: string | boolean) => {
+    setMiseADispoSchedule(prev => prev.map((entry, i) => i === dayIndex ? { ...entry, [field]: value } : entry));
+  };
+
+  const handleManualAvailability = (available: boolean) => {
+    toast({
+      title: available ? "Disponibilité activée" : "Indisponibilité enregistrée",
+      description: `${driverForAvail?.name} marqué comme ${available ? "disponible" : "indisponible"} manuellement.`,
+    });
+    setManualAvailDialogOpen(false);
+    setDriverForAvail(null);
+  };
+
+  const handleSaveMiseADispo = () => {
+    const activeDays = miseADispoSchedule.filter(d => d.active);
+    toast({
+      title: "Planning mise à dispo enregistré",
+      description: `${driverForAvail?.name} — ${activeDays.length} jour(s) planifié(s) pour la semaine.`,
+    });
+    setManualAvailDialogOpen(false);
+    setDriverForAvail(null);
   };
 
   return (
@@ -291,7 +380,7 @@ export default function ConducteursPage() {
           </Button>
         </div>
 
-        {/* ─── Stats ───────────────────────────────────────────────────────── */}
+        {/* ─── Stats: Global row ─────────────────────────────────────────── */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
           <Card>
             <CardContent className="p-3">
@@ -345,6 +434,50 @@ export default function ConducteursPage() {
               <p className="text-xl font-bold mt-0.5 text-rose-600">{stats.overAmplitude}</p>
             </CardContent>
           </Card>
+        </div>
+
+        {/* ─── Stats: Breakdown by Driver Type ────────────────────────────── */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {statsByType.map(st => {
+            const isActive = typeFilter === st.type;
+            return (
+              <Card
+                key={st.type}
+                className={cn(
+                  "cursor-pointer transition-all hover:shadow-md",
+                  isActive && "ring-2 ring-indigo-400 shadow-md"
+                )}
+                onClick={() => setTypeFilter(isActive ? "all" : st.type)}
+              >
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <Badge variant="outline" className={cn(
+                      "text-[10px] font-semibold px-2",
+                      isActive ? "bg-indigo-50 text-indigo-700 border-indigo-300" : ""
+                    )}>
+                      {st.type}
+                    </Badge>
+                    <span className="text-lg font-bold">{st.total}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="flex items-center gap-0.5 text-emerald-600">
+                      <CheckCircle2 className="h-3 w-3" />
+                      {st.available}
+                    </span>
+                    <span className="flex items-center gap-0.5 text-amber-600">
+                      <CircleDot className="h-3 w-3" />
+                      {st.partial}
+                    </span>
+                    <span className="flex items-center gap-0.5 text-slate-500">
+                      <XCircle className="h-3 w-3" />
+                      {st.unavailable}
+                    </span>
+                    <span className="text-muted-foreground ml-auto">{st.courses} courses</span>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
 
         {/* ─── Filters ─────────────────────────────────────────────────────── */}
@@ -527,9 +660,61 @@ export default function ConducteursPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Eye className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {driver.isDualDriverTour && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge variant="outline" className="text-[8px] h-4 border-indigo-300 text-indigo-700 bg-indigo-50 gap-0.5 px-1">
+                                  <Users className="h-2.5 w-2.5" />
+                                  2×
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>Tournée bi-conducteur: {driver.dualDriverTourneeCode}</TooltipContent>
+                            </Tooltip>
+                          )}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDriverToReplace(driver);
+                                  setReplacementDialogOpen(true);
+                                }}
+                              >
+                                <ArrowRightLeft className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Remplacer ce conducteur</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDriverForAvail(driver);
+                                  setManualAvailDialogOpen(true);
+                                }}
+                              >
+                                {driver.availability === "unavailable"
+                                  ? <CalendarCheck className="h-3.5 w-3.5 text-emerald-600" />
+                                  : <CalendarOff className="h-3.5 w-3.5 text-amber-600" />
+                                }
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {driver.availability === "unavailable" ? "Marquer disponible" : "Marquer indisponible"}
+                            </TooltipContent>
+                          </Tooltip>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -737,6 +922,174 @@ export default function ConducteursPage() {
                     </Card>
                   </TabsContent>
                 </Tabs>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
+        {/* ─── Replacement Dialog ──────────────────────────────────────── */}
+        <Dialog open={replacementDialogOpen} onOpenChange={(open) => { if (!open) { setReplacementDialogOpen(false); setDriverToReplace(null); } }}>
+          <DialogContent className="max-w-lg max-h-[70vh] overflow-y-auto">
+            {driverToReplace && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <ArrowRightLeft className="h-5 w-5 text-sky-500" />
+                    Remplacer {driverToReplace.name}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Conducteurs compatibles ({driverToReplace.driverType}, {driverToReplace.site}, disponibles)
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-2 mt-4">
+                  {getCompatibleDrivers(driverToReplace).length === 0 ? (
+                    <div className="text-center py-8 text-sm text-muted-foreground">
+                      <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-amber-400" />
+                      Aucun conducteur compatible disponible
+                    </div>
+                  ) : (
+                    getCompatibleDrivers(driverToReplace).map(d => (
+                      <div
+                        key={d.id}
+                        className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => handleReplacement(d.id)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center">
+                            <User className="h-4 w-4 text-indigo-500" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">{d.name}</p>
+                            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                              <span>{d.driverType}</span>
+                              <span>·</span>
+                              <span>{d.site}</span>
+                              <span>·</span>
+                              <span>{d.hoursThisWeek}h/{d.maxHoursWeek}h</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className={cn("text-[10px]", availabilityConfig[d.availability].color)}>
+                            {d.coursesThisWeek} courses
+                          </Badge>
+                          <Button size="sm" variant="outline" className="h-7 text-xs">
+                            Sélectionner
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── Manual Availability & Mise à Dispo Dialog ─────────────── */}
+        <Dialog open={manualAvailDialogOpen} onOpenChange={(open) => { if (!open) { setManualAvailDialogOpen(false); setDriverForAvail(null); } }}>
+          <DialogContent className="max-w-md">
+            {driverForAvail && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-amber-500" />
+                    Disponibilité & Mise à dispo
+                  </DialogTitle>
+                  <DialogDescription>
+                    {driverForAvail.name} — {driverForAvail.driverType} · {driverForAvail.site}
+                  </DialogDescription>
+                </DialogHeader>
+
+                {/* Quick availability toggle */}
+                <div className="space-y-3 mt-4">
+                  <p className="text-sm text-muted-foreground">
+                    Statut actuel : <Badge variant="outline" className={cn("text-xs ml-1", availabilityConfig[driverForAvail.availability].color)}>
+                      {availabilityConfig[driverForAvail.availability].label}
+                    </Badge>
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5 border-emerald-200 hover:bg-emerald-50 text-xs"
+                      onClick={() => handleManualAvailability(true)}
+                    >
+                      <CalendarCheck className="h-3.5 w-3.5 text-emerald-600" />
+                      Disponible
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5 border-rose-200 hover:bg-rose-50 text-xs"
+                      onClick={() => handleManualAvailability(false)}
+                    >
+                      <CalendarOff className="h-3.5 w-3.5 text-rose-600" />
+                      Indisponible
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Per-day mise à dispo schedule */}
+                <div className="space-y-3 mt-4 pt-4 border-t">
+                  <Label className="text-sm font-medium flex items-center gap-1.5">
+                    <Clock className="h-4 w-4 text-indigo-500" />
+                    Planning mise à dispo (horaires par jour)
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Définissez les créneaux horaires pour chaque jour de la semaine. Ces horaires seront utilisés pour la planification.
+                  </p>
+
+                  <div className="space-y-2">
+                    {miseADispoSchedule.map((entry, idx) => (
+                      <div
+                        key={entry.day}
+                        className={cn(
+                          "flex items-center gap-3 p-2 rounded-lg border transition-colors",
+                          entry.active ? "bg-white" : "bg-muted/40 opacity-60"
+                        )}
+                      >
+                        <Switch
+                          checked={entry.active}
+                          onCheckedChange={(val) => updateScheduleDay(idx, "active", val)}
+                          className="scale-75"
+                        />
+                        <span className={cn(
+                          "text-xs font-medium w-[65px]",
+                          entry.active ? "text-foreground" : "text-muted-foreground"
+                        )}>
+                          {entry.day}
+                        </span>
+                        <div className="flex items-center gap-1.5 flex-1">
+                          <Input
+                            type="time"
+                            value={entry.from}
+                            onChange={(e) => updateScheduleDay(idx, "from", e.target.value)}
+                            className="h-7 text-xs w-[90px]"
+                            disabled={!entry.active}
+                          />
+                          <span className="text-xs text-muted-foreground">→</span>
+                          <Input
+                            type="time"
+                            value={entry.to}
+                            onChange={(e) => updateScheduleDay(idx, "to", e.target.value)}
+                            className="h-7 text-xs w-[90px]"
+                            disabled={!entry.active}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <DialogFooter className="mt-4">
+                  <Button variant="outline" onClick={() => { setManualAvailDialogOpen(false); setDriverForAvail(null); }}>
+                    Annuler
+                  </Button>
+                  <Button onClick={handleSaveMiseADispo} className="gap-1.5">
+                    <CalendarCheck className="h-3.5 w-3.5" />
+                    Enregistrer
+                  </Button>
+                </DialogFooter>
               </>
             )}
           </DialogContent>

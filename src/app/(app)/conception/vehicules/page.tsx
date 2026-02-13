@@ -59,9 +59,12 @@ import {
   Filter,
   Zap,
   Package,
+  ArrowRightLeft,
+  Ban,
 } from "lucide-react";
 import { vehicles as vehiclesRaw } from "@/lib/vehicles-data";
 import { planningCourses, getVehicleAvailability } from "@/lib/conception-planning-data";
+import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, startOfWeek, endOfWeek, addDays } from "date-fns";
 import { fr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -87,6 +90,7 @@ type VehicleConception = {
   driverAssignedId?: string;
   utilizationRate: number; // percentage
   availability: "available" | "partial" | "unavailable";
+  unavailabilityReason?: string;
   tourneesCount: number;
 };
 
@@ -171,8 +175,13 @@ function buildVehicleConceptionData(): VehicleConception[] {
     );
 
     let availability: VehicleConception["availability"] = "available";
-    if (v.statut === "En panne" || v.statut === "En maintenance") {
+    let unavailabilityReason: string | undefined;
+    if (v.statut === "En panne") {
       availability = "unavailable";
+      unavailabilityReason = "Panne mécanique";
+    } else if (v.statut === "En maintenance") {
+      availability = "unavailable";
+      unavailabilityReason = "Maintenance programmée";
     } else if (v.statut === "En mission") {
       availability = "partial";
     }
@@ -196,6 +205,7 @@ function buildVehicleConceptionData(): VehicleConception[] {
       driverAssignedId: driverCourse?.assignedDriverId,
       utilizationRate,
       availability,
+      unavailabilityReason,
       tourneesCount: new Set(
         thisWeekCourses.map((c) => c.tourneeId).filter(Boolean)
       ).size,
@@ -256,6 +266,9 @@ export default function VehiculesPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [selectedVehicle, setSelectedVehicle] =
     useState<VehicleConception | null>(null);
+  const [switchDialogOpen, setSwitchDialogOpen] = useState(false);
+  const [vehicleToSwitch, setVehicleToSwitch] = useState<VehicleConception | null>(null);
+  const { toast } = useToast();
 
   const sites = useMemo(
     () => [...new Set(allVehicles.map((v) => v.site))].sort(),
@@ -376,6 +389,25 @@ export default function VehiculesPage() {
         (a, b) =>
           a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime)
       );
+  };
+
+  const getCompatibleVehicles = (vehicle: VehicleConception) => {
+    return allVehicles.filter(
+      v => v.vin !== vehicle.vin &&
+        v.availability === "available" &&
+        v.vehicleType === vehicle.vehicleType &&
+        v.site === vehicle.site
+    );
+  };
+
+  const handleVehicleSwitch = (targetVin: string) => {
+    const target = allVehicles.find(v => v.vin === targetVin);
+    toast({
+      title: "Permutation effectuée",
+      description: `${vehicleToSwitch?.immatriculation} ↔ ${target?.immatriculation}`,
+    });
+    setSwitchDialogOpen(false);
+    setVehicleToSwitch(null);
   };
 
   return (
@@ -778,15 +810,30 @@ export default function VehiculesPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "text-[10px]",
-                            statusColors[vehicle.statut]
+                        <div className="flex items-center gap-1.5">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-[10px]",
+                              statusColors[vehicle.statut]
+                            )}
+                          >
+                            {vehicle.statut}
+                          </Badge>
+                          {vehicle.availability === "unavailable" && vehicle.unavailabilityReason && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="flex items-center gap-0.5 text-[9px] text-rose-600 bg-rose-50 border border-rose-200 rounded px-1 py-0.5">
+                                  <Ban className="h-2.5 w-2.5" />
+                                  {vehicle.unavailabilityReason}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs">Raison d&apos;indisponibilité: {vehicle.unavailabilityReason}</p>
+                              </TooltipContent>
+                            </Tooltip>
                           )}
-                        >
-                          {vehicle.statut}
-                        </Badge>
+                        </div>
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1.5">
@@ -834,13 +881,41 @@ export default function VehiculesPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedVehicle(vehicle);
+                                }}
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p className="text-xs">Voir détail</p></TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setVehicleToSwitch(vehicle);
+                                  setSwitchDialogOpen(true);
+                                }}
+                              >
+                                <ArrowRightLeft className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p className="text-xs">Permuter véhicule</p></TooltipContent>
+                          </Tooltip>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -849,6 +924,63 @@ export default function VehiculesPage() {
             </Table>
           </ScrollArea>
         </Card>
+
+        {/* ─── Vehicle Switch Dialog ─── */}
+        <Dialog open={switchDialogOpen} onOpenChange={(open) => {
+          if (!open) { setSwitchDialogOpen(false); setVehicleToSwitch(null); }
+        }}>
+          <DialogContent className="max-w-lg">
+            {vehicleToSwitch && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <ArrowRightLeft className="h-5 w-5 text-indigo-500" />
+                    Permuter le véhicule
+                  </DialogTitle>
+                  <DialogDescription>
+                    Remplacer <span className="font-semibold">{vehicleToSwitch.immatriculation}</span> ({vehicleToSwitch.vehicleType}) par un véhicule compatible disponible sur le même site.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center gap-2 p-2 border rounded-lg bg-muted/30">
+                    <Truck className="h-4 w-4 text-muted-foreground" />
+                    <div className="text-sm">
+                      <span className="font-medium">{vehicleToSwitch.immatriculation}</span>
+                      <span className="text-muted-foreground"> — {vehicleToSwitch.vehicleType} · {vehicleToSwitch.site} · {vehicleToSwitch.coursesThisWeek} courses</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Véhicules compatibles disponibles</p>
+                  {getCompatibleVehicles(vehicleToSwitch).length === 0 ? (
+                    <div className="text-sm text-muted-foreground text-center py-6 border rounded-lg bg-muted/20">
+                      <AlertTriangle className="h-5 w-5 mx-auto mb-1 text-amber-500" />
+                      Aucun véhicule compatible disponible sur ce site
+                    </div>
+                  ) : (
+                    <ScrollArea className="max-h-[250px]">
+                      <div className="space-y-1.5">
+                        {getCompatibleVehicles(vehicleToSwitch).map(v => (
+                          <div key={v.vin} className="flex items-center justify-between p-2 border rounded-lg hover:bg-muted/40 transition-colors">
+                            <div className="flex items-center gap-2">
+                              <Truck className="h-4 w-4 text-emerald-500" />
+                              <div>
+                                <p className="text-sm font-medium">{v.immatriculation}</p>
+                                <p className="text-[10px] text-muted-foreground">{v.marque} {v.modele} · {v.coursesThisWeek} courses · {v.utilizationRate}% util.</p>
+                              </div>
+                            </div>
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => handleVehicleSwitch(v.vin)}>
+                              <ArrowRightLeft className="h-3 w-3" />
+                              Permuter
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  )}
+                </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* ─── Vehicle Detail Dialog ─── */}
         <Dialog

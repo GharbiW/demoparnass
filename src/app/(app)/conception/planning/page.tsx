@@ -67,12 +67,12 @@ import { HealthTiles } from "@/components/conception/planning/health-tiles";
 import { ConceptionGanttView } from "@/components/conception/planning/gantt-view";
 import { CourseDetailDialog } from "@/components/conception/planning/course-detail-dialog";
 import { PublishDialog } from "@/components/conception/planning/publish-dialog";
-import { ListViewGrouped, GroupingMode } from "@/components/conception/planning/list-view-grouped";
+import { ListViewGrouped } from "@/components/conception/planning/list-view-grouped";
 import { AdvancedFiltersPanel, AdvancedFilters, defaultFilters } from "@/components/conception/planning/advanced-filters";
 import { QuickSupDialog } from "@/components/conception/planning/quick-sup-dialog";
 
 type DisplayMode = "gantt" | "list";
-type ViewMode = "vehicles" | "drivers";
+type ViewMode = "vehicles" | "drivers" | "tournees";
 type ZoomLevel = "15min" | "30min" | "1h";
 type PeriodMode = "day" | "week";
 
@@ -148,8 +148,13 @@ function CourseTableRow({
       <TableCell className="py-2 text-xs">
         {viewMode === "vehicles" ? (
           <span>{course.assignedVehicleImmat || <span className="text-muted-foreground">—</span>}</span>
-        ) : (
+        ) : viewMode === "drivers" ? (
           <span>{course.assignedDriverName || <span className="text-muted-foreground">—</span>}</span>
+        ) : (
+          <div className="flex flex-col gap-0.5">
+            <span className="flex items-center gap-1">{course.assignedVehicleImmat || <span className="text-muted-foreground">—</span>}</span>
+            <span className="flex items-center gap-1 text-muted-foreground">{course.assignedDriverName || "—"}</span>
+          </div>
         )}
       </TableCell>
       <TableCell className="py-2">
@@ -176,7 +181,7 @@ function ConceptionPlanningContent() {
 
   // State
   const [displayMode, setDisplayMode] = useState<DisplayMode>("gantt");
-  const [viewMode, setViewMode] = useState<ViewMode>("vehicles");
+  const [viewMode, setViewMode] = useState<ViewMode>("tournees");
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>("1h");
   const [periodMode, setPeriodMode] = useState<PeriodMode>("day");
   const [date, setDate] = useState<Date>(new Date());
@@ -185,8 +190,9 @@ function ConceptionPlanningContent() {
   const [publishOpen, setPublishOpen] = useState(false);
   const [quickSupOpen, setQuickSupOpen] = useState(false);
   const [courses, setCourses] = useState<Course[]>(planningCourses);
-  const [groupingMode, setGroupingMode] = useState<GroupingMode>("tournee");
+  // groupingMode now derived from viewMode directly
   const [ganttStartHour, setGanttStartHour] = useState(0); // 0 = midnight, 6 = 6:00
+  const [weekStatus, setWeekStatus] = useState<"draft" | "published">("draft");
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -340,7 +346,13 @@ function ConceptionPlanningContent() {
     const total = filteredCourses.length;
     const assigned = filteredCourses.filter(c => c.assignmentStatus === "affectee").length;
     const sensitive = filteredCourses.filter(c => c.isSensitive).length;
-    return { total, assigned, unassigned: total - assigned, sensitive };
+    const dualDriverCourses = filteredCourses.filter(c => c.isDualDriver).length;
+
+    // Count distinct tournées
+    const tourneeIds = new Set(filteredCourses.map(c => c.tourneeId).filter(Boolean));
+    const dualDriverTournees = planningTournees.filter(t => t.isDualDriver && tourneeIds.has(t.id)).length;
+
+    return { total, assigned, unassigned: total - assigned, sensitive, tourneeCount: tourneeIds.size, dualDriverTournees, dualDriverCourses };
   }, [filteredCourses]);
 
   const handleCourseClick = (course: Course) => {
@@ -357,6 +369,7 @@ function ConceptionPlanningContent() {
   };
 
   const handlePublish = (note: string) => {
+    setWeekStatus("published");
     toast({
       title: "Plan publié",
       description: `Le plan S+1 a été publié et figé pour la Conception.`,
@@ -399,7 +412,19 @@ function ConceptionPlanningContent() {
       {/* ─── Header ─── */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-xl font-bold font-headline">Planning Global — Conception</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold font-headline">Planning Global — Conception</h1>
+            <Badge
+              variant="outline"
+              className={cn("text-[10px] h-5",
+                weekStatus === "published"
+                  ? "border-emerald-300 text-emerald-700 bg-emerald-50"
+                  : "border-slate-300 text-slate-600 bg-slate-50"
+              )}
+            >
+              {weekStatus === "published" ? "Publié" : "Brouillon"}
+            </Badge>
+          </div>
           <p className="text-xs text-muted-foreground">{weekLabel}</p>
         </div>
 
@@ -470,8 +495,16 @@ function ConceptionPlanningContent() {
             </Button>
           </div>
 
-          {/* View mode */}
+          {/* View mode — 3-way toggle */}
           <div className="flex items-center gap-1 rounded-md bg-muted p-0.5">
+            <Button
+              variant={viewMode === "tournees" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setViewMode("tournees")}
+            >
+              <Package className="h-3 w-3 mr-1" /> Tournées
+            </Button>
             <Button
               variant={viewMode === "vehicles" ? "secondary" : "ghost"}
               size="sm"
@@ -490,20 +523,7 @@ function ConceptionPlanningContent() {
             </Button>
           </div>
 
-          {/* Grouping mode (List only) */}
-          {displayMode === "list" && (
-            <Select value={groupingMode} onValueChange={(v) => setGroupingMode(v as GroupingMode)}>
-              <SelectTrigger className="h-7 w-[140px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="tournee">Par Tournée</SelectItem>
-                <SelectItem value="vehicle">Par Véhicule</SelectItem>
-                <SelectItem value="driver">Par Conducteur</SelectItem>
-                <SelectItem value="none">Aucun regroupement</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
+          {/* Grouping mode dropdown removed – list view now uses viewMode toggle directly */}
 
           {/* Zoom (Gantt only) */}
           {displayMode === "gantt" && (
@@ -624,6 +644,10 @@ function ConceptionPlanningContent() {
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">{viewStats.total} courses</span>
           <span className="flex items-center gap-1">
+            <Package className="h-3 w-3 text-sky-500" />
+            {viewStats.tourneeCount} tournées
+          </span>
+          <span className="flex items-center gap-1">
             <div className="w-2 h-2 rounded-full bg-emerald-500" />
             {viewStats.assigned} affectées
           </span>
@@ -635,6 +659,12 @@ function ConceptionPlanningContent() {
             <span className="flex items-center gap-1">
               <Shield className="h-3 w-3 text-violet-500" />
               {viewStats.sensitive} sensibles
+            </span>
+          )}
+          {viewStats.dualDriverTournees > 0 && (
+            <span className="flex items-center gap-1">
+              <Users className="h-3 w-3 text-indigo-500" />
+              {viewStats.dualDriverTournees} tournées 2×cond.
             </span>
           )}
         </div>
@@ -751,7 +781,6 @@ function ConceptionPlanningContent() {
             <ListViewGrouped
               courses={filteredCourses}
               tournees={planningTournees}
-              groupingMode={groupingMode}
               viewMode={viewMode}
               onCourseClick={handleCourseClick}
             />
