@@ -434,6 +434,7 @@ function generateTournees(): Tournee[] {
     // Dual-driver support — use 2 conducteurs when total trajet duration > 8 hours
     const isDualDriver = dualDriverKeys.has(key) && courses.length >= 2 && !!firstCourse.assignedDriverId;
     let driver2: typeof drivers[0] | undefined;
+    let servicePickup2: { location: string; time: string; kmFromBase: number } | undefined;
     if (isDualDriver) {
       // Pick a different active driver as second driver
       driver2 = sample(drivers.filter(d => d.status === 'Actif' && d.id !== firstCourse.assignedDriverId));
@@ -449,6 +450,23 @@ function generateTournees(): Tournee[] {
           c.assignedDriverName = driver2.name;
         }
       });
+
+      // Generate second service pickup for driver B — positioned 15-25 min before driver B's first course
+      const driverBCourses = sortedCourses.filter(c => c.driverSlot === 'B');
+      if (driverBCourses.length > 0) {
+        const driverBFirst = driverBCourses[0];
+        const [bh, bm] = driverBFirst.startTime.split(':').map(Number);
+        const bFirstMin = bh * 60 + bm;
+        const pickup2Offset = 15 + Math.floor(Math.random() * 11); // 15-25 min before
+        const pickup2Min = Math.max(0, bFirstMin - pickup2Offset);
+        // Use a different location than the first pickup for realism
+        const pickup2Site = sites.find(s => s !== site) || site;
+        servicePickup2 = {
+          location: getLocation(pickup2Site),
+          time: minToTime(pickup2Min),
+          kmFromBase: 8 + Math.floor(Math.random() * 25), // 8-32 km
+        };
+      }
     }
 
     // Generate days of week for repetition tracking
@@ -481,6 +499,7 @@ function generateTournees(): Tournee[] {
       date: firstCourse.date,
       status: 'draft',
       servicePickup,
+      servicePickup2,
     });
   });
 

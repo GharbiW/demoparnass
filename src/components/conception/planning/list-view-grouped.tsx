@@ -372,6 +372,18 @@ function TourneeGroupHeader({
               </div>
             </>
           )}
+          {/* Service pickup 2 for dual-driver */}
+          {tournee?.servicePickup2 && tournee?.isDualDriver && (
+            <>
+              <div className="w-px h-5 bg-purple-200" />
+              <div className="flex items-center gap-1 text-xs text-purple-600">
+                <MapPin className="h-3 w-3 shrink-0" />
+                <span className="truncate max-w-[100px]">{tournee.servicePickup2.location}</span>
+                <span className="text-[10px]">à {tournee.servicePickup2.time}</span>
+                <span className="text-[9px] text-purple-500">(Cond. B)</span>
+              </div>
+            </>
+          )}
 
           {/* Days pills */}
           <div className="ml-1">

@@ -107,6 +107,11 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave, tournee
   const [servicePickupTime, setServicePickupTime] = useState(tournee?.servicePickup?.time || "");
   const [servicePickupKm, setServicePickupKm] = useState(tournee?.servicePickup?.kmFromBase?.toString() || "");
 
+  // Second service pickup state (dual-driver: driver B)
+  const [servicePickup2Location, setServicePickup2Location] = useState(tournee?.servicePickup2?.location || "");
+  const [servicePickup2Time, setServicePickup2Time] = useState(tournee?.servicePickup2?.time || "");
+  const [servicePickup2Km, setServicePickup2Km] = useState(tournee?.servicePickup2?.kmFromBase?.toString() || "");
+
   // CDC compliance alerts
   const cdcAlerts = useMemo(() => {
     if (!course) return [];
@@ -640,6 +645,59 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave, tournee
                       </div>
                     )}
                   </div>
+
+                  {/* Second Service Pickup for dual-driver tournées */}
+                  {tournee.isDualDriver && (
+                    <div className="space-y-2 mt-3 pt-3 border-t border-dashed border-purple-200">
+                      <h4 className="text-xs font-semibold text-purple-600 uppercase tracking-wide flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />
+                        Prise de service 2 — Conducteur B {tournee.driver2Name ? `(${tournee.driver2Name})` : ''}
+                        {tournee.servicePickup2 && (
+                          <span className="text-[10px] font-normal normal-case ml-2 text-slate-500">
+                            {tournee.servicePickup2.location} à {tournee.servicePickup2.time}
+                          </span>
+                        )}
+                      </h4>
+                      <div className="pl-5 space-y-3">
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Lieu</Label>
+                            <Input
+                              value={servicePickup2Location}
+                              onChange={(e) => setServicePickup2Location(e.target.value)}
+                              placeholder="Lieu de PdS conducteur B"
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Heure</Label>
+                            <Input
+                              type="time"
+                              value={servicePickup2Time}
+                              onChange={(e) => setServicePickup2Time(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Distance (km)</Label>
+                            <Input
+                              type="number"
+                              value={servicePickup2Km}
+                              onChange={(e) => setServicePickup2Km(e.target.value)}
+                              placeholder="0"
+                              className="h-8 text-xs"
+                              min="0"
+                            />
+                          </div>
+                        </div>
+                        {tournee.servicePickup2 && (
+                          <p className="text-[10px] text-muted-foreground">
+                            Actuel: {tournee.servicePickup2.location} à {tournee.servicePickup2.time} ({tournee.servicePickup2.kmFromBase} km)
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </TabsContent>

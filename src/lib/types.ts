@@ -289,6 +289,12 @@ export type Tournee = {
     time: string; // HH:mm
     kmFromBase: number;
   };
+  // Second service pickup for dual-driver tournées (driver B starts from a different location)
+  servicePickup2?: {
+    location: string;
+    time: string; // HH:mm
+    kmFromBase: number;
+  };
 };
 
 export type PlanningHealthMetrics = {

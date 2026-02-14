@@ -517,13 +517,17 @@ function ResourceRow({
   const tourneeId = sorted[0]?.tourneeId;
   const tournee = tournees?.find(t => t.id === tourneeId || t.courses.some(c => c.id === sorted[0]?.id));
   const servicePickup = tournee?.servicePickup;
+  const servicePickup2 = tournee?.servicePickup2; // Separate location for driver B in dual-driver tournées
 
   // Compute prise de service layout to size and position them without overlaps
   const pdsInfo = (() => {
     if (!servicePickup || sorted.length === 0) return { secondStart: null as number | null };
 
     let secondStart: number | null = null;
-    if (sorted.length >= 2) {
+    // If there's a dedicated servicePickup2, use its time directly; otherwise compute from gap
+    if (servicePickup2 && sorted.length >= 2) {
+      secondStart = timeToMinutes(servicePickup2.time);
+    } else if (sorted.length >= 2) {
       const c0EndRaw = timeToMinutes(sorted[0].endTime);
       const c1StartRaw = timeToMinutes(sorted[1].startTime);
       let gap = c1StartRaw - c0EndRaw;
@@ -537,6 +541,9 @@ function ResourceRow({
     return { secondStart };
   })();
 
+  // Find where driver B starts (for PdS2 positioning in idle segments)
+  const driverBFirstIdx = sorted.findIndex(c => c.driverSlot === 'B');
+
   // Calculate idle segments (trimmed to avoid overlap with prise de service)
   const idleSegmentsAll = (() => {
     const segs: { startMin: number; endMin: number }[] = [];
@@ -544,10 +551,14 @@ function ResourceRow({
       const endPrev = timeToMinutes(sorted[i].endTime);
       const startNext = timeToMinutes(sorted[i + 1].startTime);
       if (startNext > endPrev + 10) {
-        // If there's a second PdS in the gap between course 0 and 1, trim idle segment
-        if (i === 0 && pdsInfo.secondStart !== null) {
-          if (pdsInfo.secondStart > endPrev + 5) {
-            segs.push({ startMin: endPrev, endMin: pdsInfo.secondStart });
+        // If there's a PdS2 in the gap before driver B's first course, trim idle segment
+        const isPds2Gap = pdsInfo.secondStart !== null && (
+          (driverBFirstIdx > 0 && i === driverBFirstIdx - 1) ||
+          (driverBFirstIdx < 0 && i === 0)
+        );
+        if (isPds2Gap) {
+          if (pdsInfo.secondStart! > endPrev + 5) {
+            segs.push({ startMin: endPrev, endMin: pdsInfo.secondStart! });
           }
         } else {
           segs.push({ startMin: endPrev, endMin: startNext });
@@ -772,10 +783,13 @@ function ResourceRow({
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs p-2">
                   <div className="space-y-1">
-                    <p className="text-xs font-semibold">Prise de service</p>
+                    <p className="text-xs font-semibold">Prise de service{isDualDriver ? ' — Conducteur A' : ''}</p>
                     <p className="text-xs"><strong>Lieu:</strong> {servicePickup.location}</p>
                     <p className="text-xs"><strong>Heure:</strong> {servicePickup.time}</p>
                     <p className="text-xs"><strong>Distance:</strong> {servicePickup.kmFromBase} km</p>
+                    {isDualDriver && tournee?.driverName && (
+                      <p className="text-xs"><strong>Conducteur:</strong> {tournee.driverName}</p>
+                    )}
                   </div>
                 </TooltipContent>
               </Tooltip>
@@ -783,9 +797,13 @@ function ResourceRow({
           );
         })()}
 
-        {/* Service Pickup - Compact block before second ride, fitted in gap */}
-        {servicePickup && sorted.length >= 2 && pdsInfo.secondStart !== null && (() => {
-          const c1StartAdj = adjustMinutesForStartHour(timeToMinutes(sorted[1].startTime), startHour);
+        {/* Service Pickup 2 - Compact block before second ride (dual-driver: driver B location) */}
+        {(servicePickup2 || servicePickup) && sorted.length >= 2 && pdsInfo.secondStart !== null && (() => {
+          const pds2Data = servicePickup2 || servicePickup!; // Use dedicated PdS2 data if available
+          // Find driver B's first course (slot B), or fallback to sorted[1]
+          const driverBFirstIdx = sorted.findIndex(c => c.driverSlot === 'B');
+          const driverBFirst = driverBFirstIdx >= 0 ? sorted[driverBFirstIdx] : sorted[1];
+          const c1StartAdj = adjustMinutesForStartHour(timeToMinutes(driverBFirst.startTime), startHour);
           const pdsStartAdj = adjustMinutesForStartHour(pdsInfo.secondStart!, startHour);
           let widthMin = c1StartAdj - pdsStartAdj;
           if (widthMin < 0) widthMin += 24 * 60;
@@ -801,19 +819,27 @@ function ResourceRow({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
-                    className="absolute h-[38px] rounded-[3px] border border-dashed border-emerald-400 bg-emerald-50 cursor-pointer hover:bg-emerald-100 transition-colors flex items-center justify-center gap-0.5 px-0.5 text-[8px] font-medium text-emerald-700 z-[5] overflow-hidden"
+                    className={cn(
+                      "absolute h-[38px] rounded-[3px] border border-dashed cursor-pointer hover:bg-emerald-100 transition-colors flex items-center justify-center gap-0.5 px-0.5 text-[8px] font-medium z-[5] overflow-hidden",
+                      servicePickup2
+                        ? "border-purple-400 bg-purple-50 text-purple-700"
+                        : "border-emerald-400 bg-emerald-50 text-emerald-700"
+                    )}
                     style={{ left: `${Math.max(left, 0)}px`, width: `${w}px`, top: "3px" }}
                   >
                     <MapPin className="h-2.5 w-2.5 shrink-0" />
-                    {w > 40 && <span className="truncate text-[7px]">PdS</span>}
+                    {w > 40 && <span className="truncate text-[7px]">PdS 2</span>}
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs p-2">
                   <div className="space-y-1">
-                    <p className="text-xs font-semibold">Prise de service</p>
-                    <p className="text-xs"><strong>Lieu:</strong> {servicePickup.location}</p>
+                    <p className="text-xs font-semibold">Prise de service — Conducteur B</p>
+                    <p className="text-xs"><strong>Lieu:</strong> {pds2Data.location}</p>
                     <p className="text-xs"><strong>Heure:</strong> {displayTime}</p>
-                    <p className="text-xs"><strong>Distance:</strong> {servicePickup.kmFromBase} km</p>
+                    <p className="text-xs"><strong>Distance:</strong> {pds2Data.kmFromBase} km</p>
+                    {servicePickup2 && tournee?.driver2Name && (
+                      <p className="text-xs"><strong>Conducteur:</strong> {tournee.driver2Name}</p>
+                    )}
                   </div>
                 </TooltipContent>
               </Tooltip>
@@ -1051,6 +1077,8 @@ export function ConceptionGanttView({
             </div>
             Bordure = course
           </span>
+          <span className="flex items-center gap-1"><div className="w-3 h-2 rounded border-dashed border border-emerald-400 bg-emerald-50" /> PdS</span>
+          <span className="flex items-center gap-1"><div className="w-3 h-2 rounded border-dashed border border-purple-400 bg-purple-50" /> PdS 2</span>
           <span className="flex items-center gap-1"><div className="w-3 h-2 rounded bg-amber-100 border border-amber-400" /><Zap className="h-3 w-3 text-amber-500" /> SUP</span>
           <span className="flex items-center gap-1"><div className="w-3 h-2 rounded bg-violet-100 border border-violet-400" /><Shield className="h-3 w-3 text-violet-500" /> Sensible</span>
           <span className="flex items-center gap-1"><AlertTriangle className="h-3 w-3 text-rose-500" /> Alerte</span>
