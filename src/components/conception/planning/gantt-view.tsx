@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { Course, Tournee } from "@/lib/types";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
@@ -16,6 +17,9 @@ import {
   Clock,
   Moon,
   ArrowRight,
+  Fuel,
+  Plus,
+  ChevronsRight,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -30,6 +34,8 @@ interface GanttViewProps {
   date: string; // YYYY-MM-DD
   zoomLevel: ZoomLevel;
   onCourseClick: (course: Course) => void;
+  onEmptySpaceClick?: (resourceId: string, time: string) => void;
+  onReassignTour?: (tournee: Tournee) => void;
   startHour?: number; // 0 = midnight (default), 6 = start at 6:00
 }
 
@@ -90,6 +96,21 @@ const DRIVER_GROUP_COLORS = [
   { bg: "rgba(250,204,21,0.12)", border: "rgb(250,204,21)" },   // yellow
 ];
 
+// Distinct border colors to differentiate courses within the same tournée
+// No red/orange/yellow — those are reserved for alerts (absent driver, vehicle issue, etc.)
+const COURSE_BORDER_PALETTE = [
+  '#059669', // emerald-600
+  '#0891b2', // cyan-600
+  '#7c3aed', // violet-600
+  '#0d9488', // teal-600
+  '#2563eb', // blue-600
+  '#65a30d', // lime-600
+  '#6d28d9', // violet-700
+  '#0369a1', // sky-700
+  '#047857', // emerald-700
+  '#155e75', // cyan-800
+];
+
 // ─── Course Block ─────────────────────────────────────────────────────────────
 
 function CourseBlock({
@@ -102,6 +123,7 @@ function CourseBlock({
   halfHeight = false,
   topOffset = 0,
   driverGroupColor,
+  courseBorderColor,
 }: {
   course: Course;
   zoomLevel: ZoomLevel;
@@ -112,6 +134,7 @@ function CourseBlock({
   halfHeight?: boolean;
   topOffset?: number;
   driverGroupColor?: string;
+  courseBorderColor?: string;
 }) {
   const startMin = adjustMinutesForStartHour(timeToMinutes(course.startTime), startHour);
   const endMin = adjustMinutesForStartHour(timeToMinutes(course.endTime), startHour);
@@ -125,17 +148,24 @@ function CourseBlock({
   const hasAlert = (course.constraintWarnings && course.constraintWarnings.length > 0) || isUnassigned;
 
   // Determine colors — with driver slot support
-  let bgColor: string;
+  // Separate bg+text from border so we can override border per course
+  let bgTextColor: string;
+  let defaultBorderColor: string;
   if (isUnassigned) {
-    bgColor = "bg-slate-200 border-slate-400 text-slate-700";
+    bgTextColor = "bg-slate-200 text-slate-700";
+    defaultBorderColor = "border-slate-400";
   } else if (course.isDualDriver && course.driverSlot === "B") {
-    bgColor = "bg-indigo-100 border-indigo-400 text-indigo-800";
+    bgTextColor = "bg-purple-100 text-purple-800";
+    defaultBorderColor = "border-purple-400";
   } else if (isSup) {
-    bgColor = "bg-amber-100 border-amber-400 text-amber-800";
+    bgTextColor = "bg-amber-100 text-amber-800";
+    defaultBorderColor = "border-amber-400";
   } else if (course.isSensitive) {
-    bgColor = "bg-violet-100 border-violet-400 text-violet-800";
+    bgTextColor = "bg-violet-100 text-violet-800";
+    defaultBorderColor = "border-violet-400";
   } else {
-    bgColor = "bg-sky-100 border-sky-400 text-sky-800";
+    bgTextColor = "bg-sky-100 text-sky-800";
+    defaultBorderColor = "border-sky-400";
   }
 
   const blockHeight = halfHeight ? "h-[20px]" : "h-[38px]";
@@ -160,23 +190,49 @@ function CourseBlock({
         <TooltipTrigger asChild>
           <div
             className={cn(
-              "absolute rounded-[4px] border cursor-pointer transition-all hover:shadow-lg hover:z-20 overflow-hidden",
+              "absolute rounded-[4px] cursor-pointer transition-all hover:shadow-lg hover:z-20 overflow-hidden",
               blockHeight,
-              bgColor,
+              bgTextColor,
+              // Only apply default Tailwind border color when no course-specific border
+              courseBorderColor ? "border-[3px]" : cn("border", defaultBorderColor),
               crossesMidnight && "border-dashed border-2",
             )}
             style={{
               left: `${left}px`,
               width: `${width}px`,
               top,
-              borderBottomWidth: driverGroupColor ? "3px" : undefined,
-              borderBottomColor: driverGroupColor || undefined,
+              ...(courseBorderColor ? { borderColor: courseBorderColor } : {}),
+              ...(!courseBorderColor && driverGroupColor ? { borderBottomWidth: "3px", borderBottomColor: driverGroupColor } : {}),
             }}
             onClick={onClick}
           >
+            {/* Left stripe for course differentiation */}
+            {courseBorderColor && (
+              <div
+                className="absolute left-0 top-0 bottom-0 w-[5px] z-10"
+                style={{ backgroundColor: courseBorderColor }}
+              />
+            )}
+            {/* Midnight crossing continuation arrow */}
+            {crossesMidnight && (
+              <div className="absolute right-0 top-0 bottom-0 flex items-center z-10">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="w-5 h-full bg-gradient-to-r from-transparent to-indigo-200/80 flex items-center justify-center">
+                        <ChevronsRight className="h-3 w-3 text-purple-600" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="text-xs p-2">
+                      Course continue après minuit → fin à {course.endTime}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            )}
             {/* Two-line layout for normal height, single-line for half */}
             {halfHeight ? (
-              <div className="flex items-center gap-0.5 px-1 h-full">
+              <div className={cn("flex items-center gap-0.5 px-1 h-full", courseBorderColor && "pl-[9px]")}>
                 {/* Icons */}
                 {isSup && <Zap className="h-2.5 w-2.5 shrink-0 text-amber-600" />}
                 {course.isSensitive && !isSup && <Shield className="h-2.5 w-2.5 shrink-0 text-violet-600" />}
@@ -185,7 +241,7 @@ function CourseBlock({
                 {course.isDualDriver && course.driverSlot && (
                   <span className={cn(
                     "text-[7px] font-bold shrink-0 w-3 h-3 rounded-full flex items-center justify-center leading-none",
-                    course.driverSlot === "A" ? "bg-sky-200 text-sky-800" : "bg-indigo-200 text-indigo-800"
+                    course.driverSlot === "A" ? "bg-sky-200 text-sky-800" : "bg-purple-200 text-purple-800"
                   )}>
                     {course.driverSlot}
                   </span>
@@ -202,7 +258,7 @@ function CourseBlock({
                 )}
               </div>
             ) : (
-              <div className="flex flex-col justify-center h-full px-1.5 gap-0">
+              <div className={cn("flex flex-col justify-center h-full px-1.5 gap-0", courseBorderColor && "pl-[10px]")}>
                 {/* Row 1: icons + client/label */}
                 <div className="flex items-center gap-1 min-w-0">
                   {crossesMidnight && <Moon className="h-3 w-3 shrink-0 opacity-60" />}
@@ -215,7 +271,7 @@ function CourseBlock({
                   {course.isDualDriver && course.driverSlot && (
                     <span className={cn(
                       "text-[8px] font-bold shrink-0 w-3.5 h-3.5 rounded-full flex items-center justify-center",
-                      course.driverSlot === "A" ? "bg-sky-200 text-sky-800" : "bg-indigo-200 text-indigo-800"
+                      course.driverSlot === "A" ? "bg-sky-200 text-sky-800" : "bg-purple-200 text-purple-800"
                     )}>
                       {course.driverSlot}
                     </span>
@@ -254,7 +310,7 @@ function CourseBlock({
                 {isSup && <Badge variant="outline" className="text-[10px] h-4 border-amber-300 text-amber-700">SUP</Badge>}
                 {course.isDualDriver && course.driverSlot && (
                   <Badge variant="outline" className={cn("text-[10px] h-4",
-                    course.driverSlot === "A" ? "border-sky-300 text-sky-700" : "border-indigo-300 text-indigo-700"
+                    course.driverSlot === "A" ? "border-sky-300 text-sky-700" : "border-purple-300 text-purple-700"
                   )}>
                     Conducteur {course.driverSlot}
                   </Badge>
@@ -272,8 +328,8 @@ function CourseBlock({
             <p className="text-xs flex items-center gap-1">
               <Clock className="h-3 w-3" />
               {course.startTime} - {course.endTime}
-              {crossesMidnight && <Moon className="h-3 w-3 text-indigo-500 ml-1" />}
-              {crossesMidnight && <span className="text-indigo-600 font-medium text-[10px]">Nuit</span>}
+              {crossesMidnight && <Moon className="h-3 w-3 text-purple-500 ml-1" />}
+              {crossesMidnight && <span className="text-purple-600 font-medium text-[10px]">Nuit</span>}
             </p>
             {(viewMode === "vehicles" || viewMode === "tournees") && course.assignedDriverName && (
               <p className="text-xs flex items-center gap-1">
@@ -430,6 +486,9 @@ function ResourceRow({
   isEmptyTour = false,
   vehicleImmat,
   vehicleType,
+  vehicleEnergy,
+  onEmptySpaceClick,
+  onReassignTour,
 }: {
   resourceId: string;
   resourceLabel: string;
@@ -447,6 +506,9 @@ function ResourceRow({
   isEmptyTour?: boolean;
   vehicleImmat?: string;
   vehicleType?: string;
+  vehicleEnergy?: string;
+  onEmptySpaceClick?: (resourceId: string, time: string) => void;
+  onReassignTour?: (tournee: Tournee) => void;
 }) {
   // Sort courses by start time
   const sorted = [...courses].sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -456,31 +518,50 @@ function ResourceRow({
   const tournee = tournees?.find(t => t.id === tourneeId || t.courses.some(c => c.id === sorted[0]?.id));
   const servicePickup = tournee?.servicePickup;
 
-  // Split courses by driver slot for dual-driver tours
-  const slotACourses = isDualDriver ? sorted.filter(c => c.driverSlot === "A" || !c.driverSlot) : sorted;
-  const slotBCourses = isDualDriver ? sorted.filter(c => c.driverSlot === "B") : [];
+  // Compute prise de service layout to size and position them without overlaps
+  const pdsInfo = (() => {
+    if (!servicePickup || sorted.length === 0) return { secondStart: null as number | null };
 
-  // Calculate idle segments
-  const computeIdle = (courseList: Course[]) => {
+    let secondStart: number | null = null;
+    if (sorted.length >= 2) {
+      const c0EndRaw = timeToMinutes(sorted[0].endTime);
+      const c1StartRaw = timeToMinutes(sorted[1].startTime);
+      let gap = c1StartRaw - c0EndRaw;
+      if (gap < 0) gap += 24 * 60;
+      if (gap > 15) {
+        const pdsWidthMin = Math.min(gap * 0.35, 15);
+        secondStart = (c1StartRaw - Math.ceil(pdsWidthMin) + 24 * 60) % (24 * 60);
+      }
+    }
+
+    return { secondStart };
+  })();
+
+  // Calculate idle segments (trimmed to avoid overlap with prise de service)
+  const idleSegmentsAll = (() => {
     const segs: { startMin: number; endMin: number }[] = [];
-    for (let i = 0; i < courseList.length - 1; i++) {
-      const endPrev = timeToMinutes(courseList[i].endTime);
-      const startNext = timeToMinutes(courseList[i + 1].startTime);
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const endPrev = timeToMinutes(sorted[i].endTime);
+      const startNext = timeToMinutes(sorted[i + 1].startTime);
       if (startNext > endPrev + 10) {
-        segs.push({ startMin: endPrev, endMin: startNext });
+        // If there's a second PdS in the gap between course 0 and 1, trim idle segment
+        if (i === 0 && pdsInfo.secondStart !== null) {
+          if (pdsInfo.secondStart > endPrev + 5) {
+            segs.push({ startMin: endPrev, endMin: pdsInfo.secondStart });
+          }
+        } else {
+          segs.push({ startMin: endPrev, endMin: startNext });
+        }
       }
     }
     return segs;
-  };
+  })();
 
-  const idleSegmentsA = computeIdle(slotACourses);
-  const idleSegmentsB = isDualDriver ? computeIdle(slotBCourses) : [];
-  const idleSegmentsAll = !isDualDriver ? computeIdle(sorted) : [];
-
-  // ─── Driver grouping for vehicle view (non-dual-driver) ───
-  // Detect consecutive driver groups and compute colored underline + change markers
+  // ─── Driver grouping (colored underline + change markers) ───
+  // For dual-driver tours: always show driver colors (sequential handoff)
+  // For single-driver: only in vehicles/tournees view mode
   const driverGroups = useMemo(() => {
-    if ((viewMode !== "vehicles" && viewMode !== "tournees") || isDualDriver) return { colorMap: new Map<string, string>(), changeMarkers: [] as { minutePos: number; prev: string; next: string }[] };
+    if (!isDualDriver && viewMode !== "vehicles" && viewMode !== "tournees") return { colorMap: new Map<string, string>(), changeMarkers: [] as { minutePos: number; prev: string; next: string }[] };
     const groups: { driverId: string; driverName: string; startIdx: number; endIdx: number }[] = [];
     let currentDriverId = "";
     sorted.forEach((c, i) => {
@@ -522,8 +603,8 @@ function ResourceRow({
     return { colorMap, changeMarkers };
   }, [sorted, viewMode, isDualDriver]);
 
-  // Dual-driver row height is taller
-  const rowHeight = isDualDriver ? "h-[54px]" : "h-[46px]";
+  // Same row height for all (dual-driver is now single lane)
+  const rowHeight = "h-[46px]";
 
   return (
     <div className={cn(
@@ -539,7 +620,10 @@ function ResourceRow({
                 {tourneeCode}
               </Badge>
             )}
-            <p className="text-xs font-semibold truncate">{resourceLabel}</p>
+            {/* Avoid showing label if it's the same as tourneeCode (duplicate) */}
+            {(!tourneeCode || resourceLabel !== tourneeCode) && (
+              <p className="text-xs font-semibold truncate">{resourceLabel}</p>
+            )}
           </div>
           {/* In tournees mode: show both vehicle + driver info */}
           {viewMode === "tournees" ? (
@@ -549,6 +633,11 @@ function ResourceRow({
                   <Truck className="h-2.5 w-2.5 shrink-0 text-slate-400" />
                   {vehicleImmat}
                   {vehicleType && <span className="text-[8px] opacity-60">({vehicleType})</span>}
+                  {vehicleEnergy && (
+                    <Badge variant="outline" className="text-[7px] h-3 px-1 ml-0.5 border-emerald-300 text-emerald-700 bg-emerald-50/50">
+                      <Fuel className="h-2 w-2 mr-0.5" />{vehicleEnergy}
+                    </Badge>
+                  )}
                 </span>
               ) : (
                 <span className="text-[9px] text-rose-400 flex items-center gap-0.5">
@@ -558,7 +647,7 @@ function ResourceRow({
               )}
               {isDualDriver ? (
                 <div className="flex items-center gap-1.5">
-                  <Badge variant="outline" className="text-[8px] h-3.5 border-indigo-300 text-indigo-700 bg-indigo-50 gap-0.5 px-1 font-bold">
+                  <Badge variant="outline" className="text-[8px] h-3.5 border-purple-300 text-purple-700 bg-purple-50 gap-0.5 px-1 font-bold">
                     <Users className="h-2.5 w-2.5" />
                     12h
                   </Badge>
@@ -568,8 +657,8 @@ function ResourceRow({
                       <span className="font-medium text-sky-700">{driverAName || "—"}</span>
                     </span>
                     <span className="text-[8px] leading-tight truncate">
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-400 mr-0.5 align-middle" />
-                      <span className="font-medium text-indigo-700">{driverBName || "—"}</span>
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 mr-0.5 align-middle" />
+                      <span className="font-medium text-purple-700">{driverBName || "—"}</span>
                     </span>
                   </div>
                 </div>
@@ -590,7 +679,7 @@ function ResourceRow({
               <p className="text-[10px] text-muted-foreground truncate mt-0.5">{resourceSub}</p>
               {isDualDriver && (
                 <div className="flex items-center gap-1.5 mt-1">
-                  <Badge variant="outline" className="text-[8px] h-3.5 border-indigo-300 text-indigo-700 bg-indigo-50 gap-0.5 px-1 font-bold">
+                  <Badge variant="outline" className="text-[8px] h-3.5 border-purple-300 text-purple-700 bg-purple-50 gap-0.5 px-1 font-bold">
                     <Users className="h-2.5 w-2.5" />
                     12h
                   </Badge>
@@ -600,8 +689,8 @@ function ResourceRow({
                       <span className="font-medium text-sky-700">{driverAName || "—"}</span>
                     </span>
                     <span className="text-[8px] leading-tight truncate">
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-400 mr-0.5 align-middle" />
-                      <span className="font-medium text-indigo-700">{driverBName || "—"}</span>
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 mr-0.5 align-middle" />
+                      <span className="font-medium text-purple-700">{driverBName || "—"}</span>
                     </span>
                   </div>
                 </div>
@@ -618,147 +707,142 @@ function ResourceRow({
               Sans ressources
             </Badge>
           )}
+          {/* Reassign button */}
+          {onReassignTour && tournee && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className="mt-1 text-[8px] text-sky-600 hover:text-sky-700 hover:underline flex items-center gap-0.5"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReassignTour(tournee);
+                    }}
+                  >
+                    <ArrowRight className="h-2.5 w-2.5" />
+                    Réaffecter
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="text-xs">Réaffecter conducteur / véhicule pour toute la tournée</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
       </div>
 
       {/* Timeline */}
-      <div className={cn("relative flex-1", rowHeight)} style={{ minWidth: getTotalWidth(zoomLevel) }}>
-        {/* Service Pickup Block */}
-        {servicePickup && sorted.length > 0 && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div
-                  className="absolute h-8 rounded border-2 border-dashed border-emerald-400 bg-emerald-50/50 cursor-pointer hover:bg-emerald-100/50 transition-colors flex items-center gap-1 px-1.5 text-[9px] font-medium text-emerald-700 z-[5]"
-                  style={{
-                    left: `${minutesToPx(adjustMinutesForStartHour(timeToMinutes(servicePickup.time), startHour), zoomLevel)}px`,
-                    width: `${Math.max(minutesToPx(30, zoomLevel), 60)}px`,
-                    top: "3px",
-                  }}
-                >
-                  <MapPin className="h-2.5 w-2.5" />
-                  <span className="truncate">Prise service</span>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs p-2">
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold">Prise de service</p>
-                  <p className="text-xs"><strong>Lieu:</strong> {servicePickup.location}</p>
-                  <p className="text-xs"><strong>Heure:</strong> {servicePickup.time}</p>
-                  <p className="text-xs"><strong>Distance:</strong> {servicePickup.kmFromBase} km</p>
-                </div>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
+      <div
+        className={cn("relative flex-1", rowHeight)}
+        style={{ minWidth: getTotalWidth(zoomLevel) }}
+        onClick={(e) => {
+          if (onEmptySpaceClick && e.target === e.currentTarget) {
+            // Calculate the clicked time from position
+            const rect = e.currentTarget.getBoundingClientRect();
+            const xOffset = e.clientX - rect.left;
+            const minutesFromStart = (xOffset / getTotalWidth(zoomLevel)) * 24 * 60;
+            const actualMinutes = (minutesFromStart + startHour * 60) % (24 * 60);
+            const h = Math.floor(actualMinutes / 60);
+            const m = Math.floor(actualMinutes % 60);
+            const timeStr = `${String(h).padStart(2, '0')}:${String(m - (m % 15)).padStart(2, '0')}`;
+            onEmptySpaceClick(resourceId, timeStr);
+          }
+        }}
+      >
+        {/* Service Pickup - Compact block right before first ride, no overlap */}
+        {servicePickup && sorted.length > 0 && (() => {
+          const pickupAdj = adjustMinutesForStartHour(timeToMinutes(servicePickup.time), startHour);
+          const firstStartAdj = adjustMinutesForStartHour(timeToMinutes(sorted[0].startTime), startHour);
+          const gapMin = firstStartAdj - pickupAdj;
+          if (gapMin <= 0) return null;
+          const displayMin = Math.min(gapMin, 20);
+          const w = minutesToPx(displayMin, zoomLevel);
+          if (w < 12) return null;
+          const left = minutesToPx(firstStartAdj, zoomLevel) - w;
+          return (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="absolute h-[38px] rounded-[3px] border border-dashed border-emerald-400 bg-emerald-50 cursor-pointer hover:bg-emerald-100 transition-colors flex items-center justify-center gap-0.5 px-0.5 text-[8px] font-medium text-emerald-700 z-[5] overflow-hidden"
+                    style={{ left: `${Math.max(left, 0)}px`, width: `${w}px`, top: "3px" }}
+                  >
+                    <MapPin className="h-2.5 w-2.5 shrink-0" />
+                    {w > 40 && <span className="truncate text-[7px]">PdS</span>}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs p-2">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold">Prise de service</p>
+                    <p className="text-xs"><strong>Lieu:</strong> {servicePickup.location}</p>
+                    <p className="text-xs"><strong>Heure:</strong> {servicePickup.time}</p>
+                    <p className="text-xs"><strong>Distance:</strong> {servicePickup.kmFromBase} km</p>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          );
+        })()}
 
-        {isDualDriver ? (
-          <>
-            {/* ─── Dual-driver split lanes with colored backgrounds ─── */}
+        {/* Service Pickup - Compact block before second ride, fitted in gap */}
+        {servicePickup && sorted.length >= 2 && pdsInfo.secondStart !== null && (() => {
+          const c1StartAdj = adjustMinutesForStartHour(timeToMinutes(sorted[1].startTime), startHour);
+          const pdsStartAdj = adjustMinutesForStartHour(pdsInfo.secondStart!, startHour);
+          let widthMin = c1StartAdj - pdsStartAdj;
+          if (widthMin < 0) widthMin += 24 * 60;
+          const w = minutesToPx(widthMin, zoomLevel);
+          if (w < 12) return null;
+          const left = minutesToPx(c1StartAdj, zoomLevel) - w;
+          const displayTime = (() => {
+            const t = pdsInfo.secondStart!;
+            return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+          })();
+          return (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="absolute h-[38px] rounded-[3px] border border-dashed border-emerald-400 bg-emerald-50 cursor-pointer hover:bg-emerald-100 transition-colors flex items-center justify-center gap-0.5 px-0.5 text-[8px] font-medium text-emerald-700 z-[5] overflow-hidden"
+                    style={{ left: `${Math.max(left, 0)}px`, width: `${w}px`, top: "3px" }}
+                  >
+                    <MapPin className="h-2.5 w-2.5 shrink-0" />
+                    {w > 40 && <span className="truncate text-[7px]">PdS</span>}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs p-2">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold">Prise de service</p>
+                    <p className="text-xs"><strong>Lieu:</strong> {servicePickup.location}</p>
+                    <p className="text-xs"><strong>Heure:</strong> {displayTime}</p>
+                    <p className="text-xs"><strong>Distance:</strong> {servicePickup.kmFromBase} km</p>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          );
+        })()}
 
-            {/* Slot A background band */}
-            <div
-              className="absolute left-0 right-0 rounded-t-sm"
-              style={{ top: "0px", height: "25px", backgroundColor: "rgba(56,189,248,0.06)" }}
-            />
-            {/* Slot A label */}
-            <div
-              className="absolute left-1 flex items-center gap-0.5 z-[5] pointer-events-none"
-              style={{ top: "0px" }}
-            >
-              <span className="text-[7px] font-bold text-sky-500/60 uppercase tracking-wider select-none">A</span>
-            </div>
+        {/* ─── Single lane for all tours (including dual-driver) ─── */}
+        {/* Driver change markers removed - arrows don't make sense */}
 
-            {/* Divider line between A and B */}
-            <div className="absolute left-0 right-0 border-b-2 border-dashed border-indigo-300/60" style={{ top: "25px" }} />
+        {/* Idle segments */}
+        {idleSegmentsAll.map((seg, i) => (
+          <IdleSegment key={i} startMin={seg.startMin} endMin={seg.endMin} zoomLevel={zoomLevel} startHour={startHour} />
+        ))}
 
-            {/* Slot B background band */}
-            <div
-              className="absolute left-0 right-0 rounded-b-sm"
-              style={{ top: "26px", height: "25px", backgroundColor: "rgba(129,140,248,0.06)" }}
-            />
-            {/* Slot B label */}
-            <div
-              className="absolute left-1 flex items-center gap-0.5 z-[5] pointer-events-none"
-              style={{ top: "26px" }}
-            >
-              <span className="text-[7px] font-bold text-indigo-500/60 uppercase tracking-wider select-none">B</span>
-            </div>
-
-            {/* Idle segments — Slot A */}
-            {idleSegmentsA.map((seg, i) => (
-              <IdleSegment key={`a-idle-${i}`} startMin={seg.startMin} endMin={seg.endMin} zoomLevel={zoomLevel} startHour={startHour} halfHeight topOffset={3} />
-            ))}
-            {/* Course blocks — Slot A */}
-            {slotACourses.map(course => (
-              <CourseBlock
-                key={course.id}
-                course={course}
-                zoomLevel={zoomLevel}
-                viewMode={viewMode}
-                onClick={() => onCourseClick(course)}
-                tournee={tournee}
-                startHour={startHour}
-                halfHeight
-                topOffset={3}
-              />
-            ))}
-
-            {/* Idle segments — Slot B */}
-            {idleSegmentsB.map((seg, i) => (
-              <IdleSegment key={`b-idle-${i}`} startMin={seg.startMin} endMin={seg.endMin} zoomLevel={zoomLevel} startHour={startHour} halfHeight topOffset={29} />
-            ))}
-            {/* Course blocks — Slot B */}
-            {slotBCourses.map(course => (
-              <CourseBlock
-                key={course.id}
-                course={course}
-                zoomLevel={zoomLevel}
-                viewMode={viewMode}
-                onClick={() => onCourseClick(course)}
-                tournee={tournee}
-                startHour={startHour}
-                halfHeight
-                topOffset={29}
-              />
-            ))}
-          </>
-        ) : (
-          <>
-            {/* ─── Standard single-driver row ─── */}
-
-            {/* Driver change markers */}
-            {driverGroups.changeMarkers.map((cm, i) => (
-              <DriverChangeMarker
-                key={`dcm-${i}`}
-                minutePos={cm.minutePos}
-                zoomLevel={zoomLevel}
-                startHour={startHour}
-                prevDriverName={cm.prev}
-                nextDriverName={cm.next}
-              />
-            ))}
-
-            {/* Idle segments */}
-            {idleSegmentsAll.map((seg, i) => (
-              <IdleSegment key={i} startMin={seg.startMin} endMin={seg.endMin} zoomLevel={zoomLevel} startHour={startHour} />
-            ))}
-
-            {/* Course blocks */}
-            {sorted.map(course => (
-              <CourseBlock
-                key={course.id}
-                course={course}
-                zoomLevel={zoomLevel}
-                viewMode={viewMode}
-                onClick={() => onCourseClick(course)}
-                tournee={tournee}
-                startHour={startHour}
-                driverGroupColor={driverGroups.colorMap.get(course.id)}
-              />
-            ))}
-          </>
-        )}
+        {/* Course blocks — bg = driver color, border = course-specific color */}
+        {sorted.map((course, idx) => (
+          <CourseBlock
+            key={course.id}
+            course={course}
+            zoomLevel={zoomLevel}
+            viewMode={viewMode}
+            onClick={() => onCourseClick(course)}
+            tournee={tournee}
+            startHour={startHour}
+            driverGroupColor={driverGroups.colorMap.get(course.id)}
+            courseBorderColor={sorted.length > 1 ? COURSE_BORDER_PALETTE[idx % COURSE_BORDER_PALETTE.length] : undefined}
+          />
+        ))}
       </div>
     </div>
   );
@@ -773,6 +857,8 @@ export function ConceptionGanttView({
   date,
   zoomLevel,
   onCourseClick,
+  onEmptySpaceClick,
+  onReassignTour,
   startHour = 0,
 }: GanttViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -815,6 +901,7 @@ export function ConceptionGanttView({
       isEmptyTour: boolean;
       vehicleImmat?: string;
       vehicleType?: string;
+      vehicleEnergy?: string;
     }> = new Map();
 
     if (viewMode === "tournees") {
@@ -844,6 +931,7 @@ export function ConceptionGanttView({
             isEmptyTour,
             vehicleImmat: tournee?.vehicleImmat || course.assignedVehicleImmat,
             vehicleType: tournee?.vehicleType || course.requiredVehicleType,
+            vehicleEnergy: tournee?.vehicleEnergy || course.requiredVehicleEnergy,
           });
         }
         groups.get(key)!.courses.push(course);
@@ -948,15 +1036,21 @@ export function ConceptionGanttView({
             {format(dateObj, "EEEE d MMMM yyyy", { locale: fr })}
           </p>
           {dualDriverCount > 0 && (
-            <Badge variant="outline" className="text-[10px] h-5 border-indigo-300 text-indigo-700 bg-indigo-50 gap-1">
+            <Badge variant="outline" className="text-[10px] h-5 border-purple-300 text-purple-700 bg-purple-50 gap-1">
               <Users className="h-3 w-3" />
               {dualDriverCount} tournée{dualDriverCount > 1 ? "s" : ""} 2×conducteurs
             </Badge>
           )}
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-          <span className="flex items-center gap-1"><div className="w-3 h-2 rounded bg-sky-100 border border-sky-400" /> Régulière</span>
-          <span className="flex items-center gap-1"><div className="w-3 h-2 rounded bg-indigo-100 border border-indigo-400" /> Cond. B</span>
+          <span className="flex items-center gap-1"><div className="w-3 h-2 rounded bg-sky-100 border border-sky-400" /> Cond. A</span>
+          <span className="flex items-center gap-1"><div className="w-3 h-2 rounded bg-purple-100 border border-purple-400" /> Cond. B</span>
+          <span className="flex items-center gap-1">
+            <div className="flex gap-0.5">
+              {['#059669','#0891b2','#7c3aed'].map(c => <div key={c} className="w-2 h-2 rounded-sm" style={{ border: `2px solid ${c}`, background: 'white' }} />)}
+            </div>
+            Bordure = course
+          </span>
           <span className="flex items-center gap-1"><div className="w-3 h-2 rounded bg-amber-100 border border-amber-400" /><Zap className="h-3 w-3 text-amber-500" /> SUP</span>
           <span className="flex items-center gap-1"><div className="w-3 h-2 rounded bg-violet-100 border border-violet-400" /><Shield className="h-3 w-3 text-violet-500" /> Sensible</span>
           <span className="flex items-center gap-1"><AlertTriangle className="h-3 w-3 text-rose-500" /> Alerte</span>
@@ -1019,6 +1113,9 @@ export function ConceptionGanttView({
                 isEmptyTour={group.isEmptyTour}
                 vehicleImmat={group.vehicleImmat}
                 vehicleType={group.vehicleType}
+                vehicleEnergy={group.vehicleEnergy}
+                onEmptySpaceClick={onEmptySpaceClick}
+                onReassignTour={onReassignTour}
               />
             ))
           )}

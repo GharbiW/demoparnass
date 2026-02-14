@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -60,7 +61,7 @@ import { Prestation, Course, NonPlacementReason, Tournee } from "@/lib/types";
 import { unassignedPrestations, getStatsByWeek } from "@/lib/a-placer-data-v2";
 import { planningTournees } from "@/lib/conception-planning-data";
 import { PrestationDrawer } from "@/components/conception/prestation-drawer";
-import { format, getDay } from "date-fns";
+import { format, getDay, startOfWeek, endOfWeek, addDays, addWeeks, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { fr } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -356,9 +357,21 @@ function PrestationGroupRow({
         {/* Urgency dot */}
         <div className={cn("h-2 w-2 rounded-full shrink-0", urgency.dot)} />
 
-        {/* Ref Prestation */}
+        {/* Ref Prestation + Sensitive */}
         <div className="w-[110px] shrink-0">
-          <div className="text-xs font-bold text-foreground">{prestation.id}</div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-bold text-foreground">{prestation.id}</span>
+            {prestation.hasSensitiveCourses && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Shield className="h-3 w-3 text-rose-500" />
+                  </TooltipTrigger>
+                  <TooltipContent><p className="text-xs">Trajet sensible</p></TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
           {prestation.codeArticle && (
             <div className="text-[9px] text-muted-foreground font-mono">{prestation.codeArticle}</div>
           )}
@@ -384,12 +397,20 @@ function PrestationGroupRow({
           <div className="text-xs font-semibold text-primary truncate">{prestation.client}</div>
         </div>
 
-        {/* Route (summary) */}
+        {/* Route (summary) with course count */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
             <span className="text-[11px] font-medium truncate max-w-[120px]">{firstCourse.startLocation}</span>
             <ChevronRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+            {totalCourses > 1 && (
+              <Badge variant="secondary" className="text-[8px] px-1 py-0 h-3.5 font-bold shrink-0">
+                {totalCourses} courses
+              </Badge>
+            )}
+            {totalCourses > 1 && (
+              <ChevronRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+            )}
             <div className="h-1.5 w-1.5 rounded-full bg-indigo-500 shrink-0" />
             <span className="text-[11px] font-medium truncate max-w-[120px]">{firstCourse.endLocation}</span>
           </div>
@@ -419,20 +440,6 @@ function PrestationGroupRow({
         {/* Reason */}
         <div className="w-[130px] shrink-0">
           <ReasonBadge reason={firstCourse.nonPlacementReason} />
-        </div>
-
-        {/* Sensitive */}
-        <div className="w-[30px] shrink-0 flex justify-center">
-          {prestation.hasSensitiveCourses && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger>
-                  <Shield className="h-3.5 w-3.5 text-rose-500" />
-                </TooltipTrigger>
-                <TooltipContent><p className="text-xs">Trajet sensible</p></TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
         </div>
 
         {/* Vehicle / Resource */}
@@ -691,6 +698,11 @@ function PrestationCard({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-bold text-sm">{prestation.id}</span>
+                {prestation.hasSensitiveCourses && (
+                  <Badge className="text-[9px] px-1 py-0 h-3.5 bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-50">
+                    <Shield className="h-2.5 w-2.5 mr-0.5" /> Sensible
+                  </Badge>
+                )}
                 <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5">
                   {prestation.type === 'sup' ? 'SUP' : prestation.type === 'spot' ? 'Spot' : 'Régulière'}
                 </Badge>
@@ -698,11 +710,6 @@ function PrestationCard({
                 {tourneeNumber && (
                   <Badge className="text-[9px] px-1 py-0 h-3.5 bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100 font-mono">
                     {tourneeNumber}
-                  </Badge>
-                )}
-                {prestation.hasSensitiveCourses && (
-                  <Badge className="text-[9px] px-1 py-0 h-3.5 bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-50">
-                    <Shield className="h-2.5 w-2.5 mr-0.5" /> Sensible
                   </Badge>
                 )}
               </div>
@@ -784,7 +791,9 @@ export default function APlacerPage() {
   const [weekFilter, setWeekFilter] = useState<string>("all");
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState<string>("all");
   const [driverSkillFilter, setDriverSkillFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("non_affectee_or_partielle");
+  const [dateFilter, setDateFilter] = useState<string>("all");
+  const [dayFilter, setDayFilter] = useState<string>("all");
   const [selectedPrestation, setSelectedPrestation] = useState<Prestation | null>(null);
   const [prestations, setPrestations] = useState<Prestation[]>(unassignedPrestations);
   const [showFilters, setShowFilters] = useState(false);
@@ -902,6 +911,11 @@ export default function APlacerPage() {
 
   const filteredPrestations = useMemo(() => {
     return prestations.filter(prestation => {
+      // Exclude fully assigned prestations — they should never appear in "À Placer"
+      const hasNonAffectee = prestation.courses.some(c => c.assignmentStatus === 'non_affectee');
+      const hasPartielle = prestation.courses.some(c => c.assignmentStatus === 'partiellement_affectee');
+      if (!hasNonAffectee && !hasPartielle) return false;
+
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         const match =
@@ -922,32 +936,81 @@ export default function APlacerPage() {
       if (weekFilter !== "all" && prestation.week !== weekFilter) return false;
       if (vehicleTypeFilter !== "all" && prestation.requiredVehicleType !== vehicleTypeFilter) return false;
       if (driverSkillFilter !== "all" && !prestation.requiredDriverSkills.includes(driverSkillFilter as any)) return false;
-      if (statusFilter !== "all") {
-        const hasNonAffectee = prestation.courses.some(c => c.assignmentStatus === 'non_affectee');
-        const hasAffectee = prestation.courses.some(c => c.assignmentStatus === 'affectee');
-        const hasPartielle = prestation.courses.some(c => c.assignmentStatus === 'partiellement_affectee');
+
+      // Status filter
+      if (statusFilter !== "all" && statusFilter !== "non_affectee_or_partielle") {
         if (statusFilter === "non_affectee" && !hasNonAffectee) return false;
-        if (statusFilter === "partiellement_affectee" && !hasPartielle && !(hasNonAffectee && hasAffectee)) return false;
-        if (statusFilter === "affectee" && hasNonAffectee) return false;
+        if (statusFilter === "partiellement_affectee" && !hasPartielle) return false;
       }
+
+      // Day filter (Lu, Ma, Me, etc.)
+      if (dayFilter !== "all") {
+        const hasCourseOnDay = prestation.courses.some(c => {
+          const d = DAY_MAP[getDay(new Date(c.date))];
+          return d === dayFilter;
+        });
+        if (!hasCourseOnDay) return false;
+      }
+
+      // Date/period filter
+      if (dateFilter !== "all") {
+        const now = new Date();
+        let start: Date;
+        let end: Date;
+        if (dateFilter === "today") {
+          start = startOfDay(now);
+          end = endOfDay(now);
+        } else if (dateFilter === "tomorrow") {
+          const tom = addDays(now, 1);
+          start = startOfDay(tom);
+          end = endOfDay(tom);
+        } else if (dateFilter === "this_week") {
+          start = startOfWeek(now, { weekStartsOn: 1 });
+          end = endOfWeek(now, { weekStartsOn: 1 });
+        } else if (dateFilter === "next_week") {
+          const nextWeekStart = addWeeks(startOfWeek(now, { weekStartsOn: 1 }), 1);
+          start = nextWeekStart;
+          end = endOfWeek(nextWeekStart, { weekStartsOn: 1 });
+        } else if (dateFilter === "next_2_weeks") {
+          start = startOfWeek(now, { weekStartsOn: 1 });
+          end = endOfWeek(addWeeks(start, 2), { weekStartsOn: 1 });
+        } else {
+          return true; // 'all' or unknown
+        }
+        const hasCourseInRange = prestation.courses.some(c => {
+          const courseDate = new Date(c.date);
+          return isWithinInterval(courseDate, { start, end });
+        });
+        if (!hasCourseInRange) return false;
+      }
+
       return true;
     });
-  }, [prestations, searchQuery, clientFilter, typeFilter, reasonFilter, weekFilter, vehicleTypeFilter, driverSkillFilter, statusFilter]);
+  }, [prestations, searchQuery, clientFilter, typeFilter, reasonFilter, weekFilter, vehicleTypeFilter, driverSkillFilter, statusFilter, dateFilter, dayFilter]);
 
   const handleAssign = (courseIds: string[], driverId: string, vehicleId: string) => {
     setPrestations(prev => prev.map(prestation => {
       const updatedCourses = prestation.courses.map(course => {
         if (courseIds.includes(course.id)) {
-          return { ...course, assignmentStatus: 'affectee' as const, assignedDriverId: driverId, assignedVehicleId: vehicleId };
+          // If vehicleId is empty, mark as partially assigned
+          const assignmentStatus = vehicleId ? 'affectee' as const : 'partiellement_affectee' as const;
+          return { 
+            ...course, 
+            assignmentStatus, 
+            assignedDriverId: driverId, 
+            assignedVehicleId: vehicleId || undefined,
+            missingResource: vehicleId ? undefined : 'vehicle' as const
+          };
         }
         return course;
       });
       return { ...prestation, courses: updatedCourses };
     }));
-    toast({ title: "Assignation réussie", description: `${courseIds.length} course(s) assignée(s) avec succès.` });
+    const vehicleMsg = vehicleId ? '' : ' (sans véhicule - à assigner ultérieurement)';
+    toast({ title: "Assignation réussie", description: `${courseIds.length} course(s) assignée(s) avec succès${vehicleMsg}.` });
   };
 
-  const activeFilterCount = [clientFilter, typeFilter, reasonFilter, weekFilter, vehicleTypeFilter, driverSkillFilter, statusFilter].filter(f => f !== "all").length;
+  const activeFilterCount = [clientFilter, typeFilter, reasonFilter, weekFilter, vehicleTypeFilter, driverSkillFilter, dateFilter, dayFilter].filter(f => f !== "all").length + (statusFilter !== "all" && statusFilter !== "non_affectee_or_partielle" ? 1 : 0);
   const totalUnassigned = filteredPrestations.reduce((sum, p) => sum + p.courses.filter(c => c.assignmentStatus === 'non_affectee').length, 0);
   const totalCourses = filteredPrestations.reduce((sum, p) => sum + p.courses.length, 0);
 
@@ -1017,7 +1080,7 @@ export default function APlacerPage() {
           {activeFilterCount > 0 && (
             <Button
               variant="ghost" size="sm"
-              onClick={() => { setClientFilter("all"); setTypeFilter("all"); setReasonFilter("all"); setWeekFilter("all"); setVehicleTypeFilter("all"); setDriverSkillFilter("all"); setStatusFilter("all"); }}
+              onClick={() => { setClientFilter("all"); setTypeFilter("all"); setReasonFilter("all"); setWeekFilter("all"); setVehicleTypeFilter("all"); setDriverSkillFilter("all"); setStatusFilter("non_affectee_or_partielle"); setDateFilter("all"); setDayFilter("all"); }}
               className="h-9 text-xs text-muted-foreground"
             >
               Réinitialiser
@@ -1038,6 +1101,32 @@ export default function APlacerPage() {
         {/* Expanded filters */}
         {showFilters && (
           <div className="flex items-center gap-3 flex-wrap p-3 rounded-lg bg-card border animate-in slide-in-from-top-2 duration-200">
+            {/* Time filters first */}
+            <Select value={dateFilter} onValueChange={setDateFilter}>
+              <SelectTrigger className="w-[160px] h-8 text-xs"><SelectValue placeholder="Période" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes périodes</SelectItem>
+                <SelectItem value="today">Aujourd&apos;hui</SelectItem>
+                <SelectItem value="tomorrow">Demain</SelectItem>
+                <SelectItem value="this_week">Cette semaine</SelectItem>
+                <SelectItem value="next_week">Semaine prochaine</SelectItem>
+                <SelectItem value="next_2_weeks">2 prochaines semaines</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={dayFilter} onValueChange={setDayFilter}>
+              <SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue placeholder="Jour" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous jours</SelectItem>
+                <SelectItem value="Lu">Lundi</SelectItem>
+                <SelectItem value="Ma">Mardi</SelectItem>
+                <SelectItem value="Me">Mercredi</SelectItem>
+                <SelectItem value="Je">Jeudi</SelectItem>
+                <SelectItem value="Ve">Vendredi</SelectItem>
+                <SelectItem value="Sa">Samedi</SelectItem>
+                <SelectItem value="Di">Dimanche</SelectItem>
+              </SelectContent>
+            </Select>
+            <Separator orientation="vertical" className="h-6" />
             <Select value={clientFilter} onValueChange={setClientFilter}>
               <SelectTrigger className="w-[160px] h-8 text-xs"><SelectValue placeholder="Client" /></SelectTrigger>
               <SelectContent>
@@ -1064,10 +1153,9 @@ export default function APlacerPage() {
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[160px] h-8 text-xs"><SelectValue placeholder="Statut" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tous statuts</SelectItem>
+                <SelectItem value="non_affectee_or_partielle">Tous statuts</SelectItem>
                 <SelectItem value="non_affectee">Non affectée</SelectItem>
                 <SelectItem value="partiellement_affectee">Partiellement</SelectItem>
-                <SelectItem value="affectee">Affectée</SelectItem>
               </SelectContent>
             </Select>
             <Select value={vehicleTypeFilter} onValueChange={setVehicleTypeFilter}>
@@ -1097,11 +1185,13 @@ export default function APlacerPage() {
         {/* Active filter pills */}
         {activeFilterCount > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
+            {dateFilter !== "all" && <ActiveFilter label={dateFilter === 'today' ? "Aujourd'hui" : dateFilter === 'tomorrow' ? 'Demain' : dateFilter === 'this_week' ? 'Cette semaine' : dateFilter === 'next_week' ? 'Sem. prochaine' : '2 sem.'} onRemove={() => setDateFilter("all")} />}
+            {dayFilter !== "all" && <ActiveFilter label={dayFilter === 'Lu' ? 'Lundi' : dayFilter === 'Ma' ? 'Mardi' : dayFilter === 'Me' ? 'Mercredi' : dayFilter === 'Je' ? 'Jeudi' : dayFilter === 'Ve' ? 'Vendredi' : dayFilter === 'Sa' ? 'Samedi' : 'Dimanche'} onRemove={() => setDayFilter("all")} />}
             {weekFilter !== "all" && <ActiveFilter label={weekFilter} onRemove={() => setWeekFilter("all")} />}
             {clientFilter !== "all" && <ActiveFilter label={clientFilter} onRemove={() => setClientFilter("all")} />}
             {typeFilter !== "all" && <ActiveFilter label={typeFilter} onRemove={() => setTypeFilter("all")} />}
             {reasonFilter !== "all" && <ActiveFilter label={reasonConfig[reasonFilter as NonPlacementReason]?.shortLabel || reasonFilter} onRemove={() => setReasonFilter("all")} />}
-            {statusFilter !== "all" && <ActiveFilter label={statusFilter === 'non_affectee' ? 'Non affectée' : statusFilter === 'partiellement_affectee' ? 'Partielle' : 'Affectée'} onRemove={() => setStatusFilter("all")} />}
+            {statusFilter !== "all" && statusFilter !== "non_affectee_or_partielle" && <ActiveFilter label={statusFilter === 'non_affectee' ? 'Non affectée' : 'Partielle'} onRemove={() => setStatusFilter("non_affectee_or_partielle")} />}
             {vehicleTypeFilter !== "all" && <ActiveFilter label={vehicleTypeFilter} onRemove={() => setVehicleTypeFilter("all")} />}
             {driverSkillFilter !== "all" && <ActiveFilter label={driverSkillFilter} onRemove={() => setDriverSkillFilter("all")} />}
           </div>
@@ -1165,7 +1255,6 @@ export default function APlacerPage() {
               <div className="w-[80px]">Horaires</div>
               <div className="w-[60px]">Type</div>
               <div className="w-[130px]">Raison</div>
-              <div className="w-[30px]">🔒</div>
               <div className="w-[80px]">Véhicule</div>
               <div className="w-[50px]">Manque</div>
               <div className="w-[100px] text-right">Actions</div>

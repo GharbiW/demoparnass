@@ -33,19 +33,12 @@ import {
   Send,
   Search,
   Filter,
-  LayoutGrid,
-  LayoutList,
-  MapPin,
-  Clock,
-  AlertTriangle,
   Shield,
   Zap,
   ChevronLeft,
   ChevronRight,
   Package,
   User,
-  ZoomIn,
-  ZoomOut,
   Eye,
   X,
 } from "lucide-react";
@@ -61,7 +54,6 @@ import {
   planningVersions,
   getAvailableDrivers,
   getAvailableVehicles,
-  getVehicleAvailability,
 } from "@/lib/conception-planning-data";
 import { HealthTiles } from "@/components/conception/planning/health-tiles";
 import { ConceptionGanttView } from "@/components/conception/planning/gantt-view";
@@ -70,6 +62,7 @@ import { PublishDialog } from "@/components/conception/planning/publish-dialog";
 import { ListViewGrouped } from "@/components/conception/planning/list-view-grouped";
 import { AdvancedFiltersPanel, AdvancedFilters, defaultFilters } from "@/components/conception/planning/advanced-filters";
 import { QuickSupDialog } from "@/components/conception/planning/quick-sup-dialog";
+import { TourReassignmentDialog } from "@/components/conception/planning/tour-reassignment-dialog";
 
 type DisplayMode = "gantt" | "list";
 type ViewMode = "vehicles" | "drivers" | "tournees";
@@ -189,6 +182,8 @@ function ConceptionPlanningContent() {
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [quickSupOpen, setQuickSupOpen] = useState(false);
+  const [reassignTourOpen, setReassignTourOpen] = useState(false);
+  const [reassignTournee, setReassignTournee] = useState<import("@/lib/types").Tournee | null>(null);
   const [courses, setCourses] = useState<Course[]>(planningCourses);
   // groupingMode now derived from viewMode directly
   const [ganttStartHour, setGanttStartHour] = useState(0); // 0 = midnight, 6 = 6:00
@@ -207,7 +202,6 @@ function ConceptionPlanningContent() {
   const weekDays = Array.from({ length: 6 }, (_, i) => addDays(weekStart, i));
 
   const metrics = useMemo(() => getHealthMetrics(), []);
-  const vehicleAvailability = useMemo(() => getVehicleAvailability(currentDateStr), [currentDateStr]);
 
   // Available data for advanced filters
   const availableClients = useMemo(() => 
@@ -222,8 +216,15 @@ function ConceptionPlanningContent() {
     getAvailableDrivers().map(d => ({ id: d.id, name: d.name, type: d.driverType || 'CM' })), 
     []
   );
+  const availableServicePickupLocations = useMemo(() => {
+    const locations = new Set<string>();
+    planningTournees.forEach(t => {
+      if (t.servicePickup?.location) locations.add(t.servicePickup.location);
+    });
+    return Array.from(locations).sort();
+  }, []);
 
-  // Filter courses for the list view
+  // Filter courses for both list and gantt views
   const filteredCourses = useMemo(() => {
     let filtered = courses;
 
@@ -321,6 +322,15 @@ function ConceptionPlanningContent() {
         c.requiredDriverSkills.includes(advancedFilters.hasFormation as any)
       );
     }
+    if (advancedFilters.servicePickupLocation !== "all") {
+      // Filter by tournee's service pickup location
+      const matchingTourneeIds = new Set(
+        planningTournees
+          .filter(t => t.servicePickup?.location === advancedFilters.servicePickupLocation)
+          .map(t => t.id)
+      );
+      filtered = filtered.filter(c => c.tourneeId && matchingTourneeIds.has(c.tourneeId));
+    }
     if (advancedFilters.sensitiveOnly) {
       filtered = filtered.filter(c => c.isSensitive);
     }
@@ -373,6 +383,22 @@ function ConceptionPlanningContent() {
     toast({
       title: "Plan publié",
       description: `Le plan S+1 a été publié et figé pour la Conception.`,
+    });
+  };
+
+  const handleReassignTour = (tournee: import("@/lib/types").Tournee) => {
+    setReassignTournee(tournee);
+    setReassignTourOpen(true);
+  };
+
+  const handleTourReassigned = (updatedCourses: Course[]) => {
+    setCourses(prev => {
+      const updated = [...prev];
+      updatedCourses.forEach(uc => {
+        const idx = updated.findIndex(c => c.id === uc.id);
+        if (idx !== -1) updated[idx] = uc;
+      });
+      return updated;
     });
   };
 
@@ -442,8 +468,9 @@ function ConceptionPlanningContent() {
             <Button
               variant={periodMode === "week" ? "secondary" : "ghost"}
               size="sm"
-              className="h-7 text-xs"
-              onClick={() => setPeriodMode("week")}
+              className={cn("h-7 text-xs", displayMode === "gantt" && "opacity-50 cursor-not-allowed")}
+              onClick={() => { if (displayMode !== "gantt") setPeriodMode("week"); }}
+              disabled={displayMode === "gantt"}
             >
               Semaine
             </Button>
@@ -481,7 +508,7 @@ function ConceptionPlanningContent() {
               variant={displayMode === "gantt" ? "secondary" : "ghost"}
               size="sm"
               className="h-7 text-xs"
-              onClick={() => setDisplayMode("gantt")}
+              onClick={() => { setDisplayMode("gantt"); setPeriodMode("day"); }}
             >
               <GanttChartIcon className="h-3 w-3 mr-1" /> Gantt
             </Button>
@@ -519,51 +546,11 @@ function ConceptionPlanningContent() {
               className="h-7 text-xs"
               onClick={() => setViewMode("drivers")}
             >
-              <Users className="h-3 w-3 mr-1" /> Chauffeurs
+              <Users className="h-3 w-3 mr-1" /> Conducteurs
             </Button>
           </div>
 
           {/* Grouping mode dropdown removed – list view now uses viewMode toggle directly */}
-
-          {/* Zoom (Gantt only) */}
-          {displayMode === "gantt" && (
-            <div className="flex items-center gap-1 rounded-md bg-muted p-0.5">
-              <Button
-                variant={zoomLevel === "1h" ? "secondary" : "ghost"}
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setZoomLevel("1h")}
-              >
-                1h
-              </Button>
-              <Button
-                variant={zoomLevel === "30min" ? "secondary" : "ghost"}
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setZoomLevel("30min")}
-              >
-                30m
-              </Button>
-              <Button
-                variant={zoomLevel === "15min" ? "secondary" : "ghost"}
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setZoomLevel("15min")}
-              >
-                15m
-              </Button>
-            </div>
-          )}
-
-          {/* Quick SUP */}
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
-            onClick={() => setQuickSupOpen(true)}
-          >
-            <Zap className="h-3 w-3 mr-1" /> + SUP
-          </Button>
 
           {/* Gantt start hour config */}
           {displayMode === "gantt" && (
@@ -579,6 +566,17 @@ function ConceptionPlanningContent() {
               </SelectContent>
             </Select>
           )}
+
+          {/* Quick SUP — next to Publier as main CTAs */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 opacity-50 cursor-not-allowed"
+            onClick={() => setQuickSupOpen(true)}
+            disabled
+          >
+            <Zap className="h-3 w-3 mr-1" /> + SUP
+          </Button>
 
           {/* Publish CTA */}
           <Button
@@ -611,34 +609,6 @@ function ConceptionPlanningContent() {
         )}
       </div>
 
-      {/* ─── Vehicle Availability (Pessimistic) ─── */}
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/40 rounded-lg border text-xs">
-        <Truck className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-        <span className="font-semibold text-slate-700">Disponibilité véhicules (pessimiste):</span>
-        <Badge variant="outline" className={cn("text-[10px] h-5", vehicleAvailability.availabilityRate >= 80 ? "border-emerald-300 text-emerald-700 bg-emerald-50" : vehicleAvailability.availabilityRate >= 60 ? "border-amber-300 text-amber-700 bg-amber-50" : "border-rose-300 text-rose-700 bg-rose-50")}>
-          {vehicleAvailability.availabilityRate}% dispo
-        </Badge>
-        <span className="text-muted-foreground">
-          {vehicleAvailability.availableToday}/{vehicleAvailability.totalVehicles} disponibles
-        </span>
-        {vehicleAvailability.maintenancePlanned > 0 && (
-          <Badge variant="secondary" className="text-[10px] h-5">
-            {vehicleAvailability.maintenancePlanned} maint.
-          </Badge>
-        )}
-        {vehicleAvailability.breakdowns > 0 && (
-          <Badge variant="destructive" className="text-[10px] h-5">
-            {vehicleAvailability.breakdowns} pannes
-          </Badge>
-        )}
-        <div className="flex-1" />
-        {Object.entries(vehicleAvailability.byType).slice(0, 4).map(([type, data]) => (
-          <span key={type} className="text-muted-foreground whitespace-nowrap">
-            {type}: <span className="font-medium text-foreground">{data.available}</span>/{data.total}
-          </span>
-        ))}
-      </div>
-
       {/* ─── View Stats Bar ─── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -669,9 +639,9 @@ function ConceptionPlanningContent() {
           )}
         </div>
 
-        {/* List-mode filters */}
-        {displayMode === "list" && (
-          <div className="space-y-2">
+        {/* Filters — available in both List and Gantt modes */}
+        <div className="space-y-2">
+          {displayMode === "list" && (
             <div className="flex items-center gap-2">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
@@ -698,28 +668,29 @@ function ConceptionPlanningContent() {
                   <SelectItem value="non_affectee" className="text-xs">Non affectée</SelectItem>
                 </SelectContent>
               </Select>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="h-7 w-32 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all" className="text-xs">Tous types</SelectItem>
-                <SelectItem value="régulière" className="text-xs">Régulière</SelectItem>
-                <SelectItem value="sup" className="text-xs">SUP</SelectItem>
-                <SelectItem value="spot" className="text-xs">Spot</SelectItem>
-              </SelectContent>
-            </Select>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="h-7 w-32 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="text-xs">Tous types</SelectItem>
+                  <SelectItem value="régulière" className="text-xs">Régulière</SelectItem>
+                  <SelectItem value="sup" className="text-xs">SUP</SelectItem>
+                  <SelectItem value="spot" className="text-xs">Spot</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <AdvancedFiltersPanel
-              filters={advancedFilters}
-              onFiltersChange={setAdvancedFilters}
-              availableClients={availableClients}
-              availableVehicles={availableVehiclesForFilter}
-              availableDrivers={availableDriversForFilter}
-              onReset={() => setAdvancedFilters(defaultFilters)}
-            />
-          </div>
-        )}
+          )}
+          <AdvancedFiltersPanel
+            filters={advancedFilters}
+            onFiltersChange={setAdvancedFilters}
+            availableClients={availableClients}
+            availableVehicles={availableVehiclesForFilter}
+            availableDrivers={availableDriversForFilter}
+            availableServicePickupLocations={availableServicePickupLocations}
+            onReset={() => setAdvancedFilters(defaultFilters)}
+          />
+        </div>
       </div>
 
       {/* ─── Main Content ─── */}
@@ -727,55 +698,16 @@ function ConceptionPlanningContent() {
         <CardContent className="p-0 h-full">
           {displayMode === "gantt" ? (
             /* Gantt View */
-            periodMode === "day" ? (
-              <ConceptionGanttView
-                courses={courses}
-                tournees={planningTournees}
-                viewMode={viewMode}
-                date={currentDateStr}
-                zoomLevel={zoomLevel}
-                onCourseClick={handleCourseClick}
-                startHour={ganttStartHour}
-              />
-            ) : (
-              /* Week Gantt: show day tabs */
-              <div className="flex flex-col h-full">
-                <div className="flex border-b bg-muted/30">
-                  {weekDays.map((d) => {
-                    const dayStr = format(d, "yyyy-MM-dd");
-                    const isSelected = dayStr === currentDateStr;
-                    const dayCoursesCount = courses.filter(c => c.date === dayStr).length;
-                    return (
-                      <button
-                        key={dayStr}
-                        className={cn(
-                          "flex-1 px-2 py-1.5 text-center border-b-2 transition-colors",
-                          isSelected ? "border-sky-500 bg-white" : "border-transparent hover:bg-muted/50"
-                        )}
-                        onClick={() => setDate(d)}
-                      >
-                        <p className={cn("text-xs font-semibold", isSelected ? "text-sky-700" : "text-muted-foreground")}>
-                          {format(d, "EEE", { locale: fr })}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground">{format(d, "dd/MM")}</p>
-                        <Badge variant="secondary" className="text-[9px] h-4 mt-0.5">{dayCoursesCount}</Badge>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="flex-1">
-                  <ConceptionGanttView
-                    courses={courses}
-                    tournees={planningTournees}
-                    viewMode={viewMode}
-                    date={currentDateStr}
-                    zoomLevel={zoomLevel}
-                    onCourseClick={handleCourseClick}
-                    startHour={ganttStartHour}
-                  />
-                </div>
-              </div>
-            )
+            <ConceptionGanttView
+              courses={filteredCourses}
+              tournees={planningTournees}
+              viewMode={viewMode}
+              date={currentDateStr}
+              zoomLevel={zoomLevel}
+              onCourseClick={handleCourseClick}
+              onReassignTour={handleReassignTour}
+              startHour={ganttStartHour}
+            />
           ) : (
             /* List View */
             <ListViewGrouped
@@ -810,6 +742,14 @@ function ConceptionPlanningContent() {
         open={quickSupOpen}
         onOpenChange={setQuickSupOpen}
         defaultDate={currentDateStr}
+      />
+
+      <TourReassignmentDialog
+        open={reassignTourOpen}
+        onOpenChange={setReassignTourOpen}
+        tournee={reassignTournee}
+        tournees={planningTournees}
+        onReassign={handleTourReassigned}
       />
     </div>
   );

@@ -38,9 +38,12 @@ import {
   XCircle,
   FileText,
   ChevronRight,
+  ChevronDown,
   Star,
   Info,
   Save,
+  ExternalLink,
+  Fuel,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -103,6 +106,54 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave, tournee
   const [servicePickupLocation, setServicePickupLocation] = useState(tournee?.servicePickup?.location || "");
   const [servicePickupTime, setServicePickupTime] = useState(tournee?.servicePickup?.time || "");
   const [servicePickupKm, setServicePickupKm] = useState(tournee?.servicePickup?.kmFromBase?.toString() || "");
+
+  // CDC compliance alerts
+  const cdcAlerts = useMemo(() => {
+    if (!course) return [];
+    const alerts: { type: string; message: string; severity: 'warning' | 'error' }[] = [];
+    
+    // Energy mismatch
+    if (course.requiredVehicleEnergy && tournee?.vehicleEnergy) {
+      if (course.requiredVehicleEnergy !== tournee.vehicleEnergy) {
+        alerts.push({
+          type: 'energy_mismatch',
+          message: `Énergie requise: ${course.requiredVehicleEnergy}, véhicule affecté: ${tournee.vehicleEnergy}`,
+          severity: 'warning',
+        });
+      }
+    }
+    
+    // Vehicle type mismatch
+    if (course.requiredVehicleType && tournee?.vehicleType) {
+      const normalize = (t: string) => t === 'Caisse mobile' ? 'CM' : t;
+      if (normalize(course.requiredVehicleType) !== normalize(tournee.vehicleType)) {
+        alerts.push({
+          type: 'vehicle_type_mismatch',
+          message: `Type véhicule requis: ${course.requiredVehicleType}, affecté: ${tournee.vehicleType}`,
+          severity: 'error',
+        });
+      }
+    }
+    
+    // Driver skill requirements
+    if (course.requiredDriverSkills.length > 0 && course.assignedDriverId) {
+      // Simplified check — flag if skills are required
+      if (course.constraintWarnings && course.constraintWarnings.length > 0) {
+        course.constraintWarnings.forEach(w => {
+          alerts.push({
+            type: 'driver_skill_missing',
+            message: w,
+            severity: 'warning',
+          });
+        });
+      }
+    }
+    
+    return alerts;
+  }, [course, tournee]);
+
+  // Service pickup collapsible state
+  const [servicePickupExpanded, setServicePickupExpanded] = useState(false);
 
   if (!course) return null;
 
@@ -227,6 +278,27 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave, tournee
             <Badge variant="secondary" className="text-[10px]">
               {course.assignmentStatus === 'affectee' ? 'Affectée' : course.assignmentStatus === 'partiellement_affectee' ? 'Partiellement affectée' : 'Non affectée'}
             </Badge>
+            {/* Link to prestation page */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs gap-1 text-sky-600 hover:text-sky-700 hover:bg-sky-50 ml-auto"
+                    onClick={() => {
+                      window.open(`/conception/prestations/${course.prestationId}`, '_blank');
+                    }}
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Voir prestation
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="text-xs">
+                  Ouvrir la prestation {course.prestationId} avec toutes les courses de la semaine
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
           <DialogDescription className="text-xs flex items-center gap-3 mt-1">
             <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{format(dateObj, "EEEE d MMMM yyyy", { locale: fr })}</span>
@@ -339,6 +411,36 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave, tournee
                       {course.tourneeNumber && (
                         <Badge variant="outline" className="text-[10px]">{course.tourneeNumber}</Badge>
                       )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* CDC Compliance Alerts */}
+              {cdcAlerts.length > 0 && (
+                <Card className="border-rose-200 bg-rose-50/50">
+                  <CardContent className="px-4 py-3">
+                    <p className="text-xs font-semibold text-rose-700 mb-2 flex items-center gap-1">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      Alertes CDC ({cdcAlerts.length})
+                    </p>
+                    <div className="space-y-1.5">
+                      {cdcAlerts.map((alert, i) => (
+                        <div key={i} className={cn(
+                          "flex items-start gap-2 text-xs p-2 rounded-md",
+                          alert.severity === 'error' ? "bg-rose-100/80 text-rose-800" : "bg-amber-100/80 text-amber-800"
+                        )}>
+                          {alert.severity === 'error' ? (
+                            <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                          ) : (
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                          )}
+                          <div>
+                            <span className="font-semibold capitalize">{alert.type.replace(/_/g, ' ')}</span>
+                            <p className="text-[11px] mt-0.5">{alert.message}</p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </CardContent>
                 </Card>
@@ -467,55 +569,75 @@ export function CourseDetailDialog({ course, open, onOpenChange, onSave, tournee
                 </Select>
               </div>
 
-              {/* Service Pickup (Tournée level) */}
+              {/* Service Pickup (Tournée level) - Collapsible */}
               {tournee && (
                 <>
                   <Separator />
                   <div className="space-y-2">
-                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                      Prise de service (Tournée {tournee.tourneeCode})
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 w-full text-left"
+                      onClick={() => setServicePickupExpanded(!servicePickupExpanded)}
+                    >
+                      {servicePickupExpanded ? (
+                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                      )}
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        Prise de service (Tournée {tournee.tourneeCode})
+                        {tournee.servicePickup && !servicePickupExpanded && (
+                          <span className="text-[10px] font-normal normal-case ml-2 text-slate-500">
+                            {tournee.servicePickup.location} à {tournee.servicePickup.time}
+                          </span>
+                        )}
+                      </h4>
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger><Info className="h-3 w-3 text-muted-foreground" /></TooltipTrigger>
                           <TooltipContent className="text-xs max-w-xs">La prise de service est rattachée à la tournée, pas à la course individuelle. Les calculs kilométriques sont effectués au niveau de la tournée.</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
-                    </h4>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Lieu</Label>
-                        <Input
-                          value={servicePickupLocation}
-                          onChange={(e) => setServicePickupLocation(e.target.value)}
-                          placeholder="Lieu de prise de service"
-                          className="h-8 text-xs"
-                        />
+                    </button>
+                    {servicePickupExpanded && (
+                      <div className="pl-5 space-y-3">
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Lieu</Label>
+                            <Input
+                              value={servicePickupLocation}
+                              onChange={(e) => setServicePickupLocation(e.target.value)}
+                              placeholder="Lieu de prise de service"
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Heure</Label>
+                            <Input
+                              type="time"
+                              value={servicePickupTime}
+                              onChange={(e) => setServicePickupTime(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Distance (km)</Label>
+                            <Input
+                              type="number"
+                              value={servicePickupKm}
+                              onChange={(e) => setServicePickupKm(e.target.value)}
+                              placeholder="0"
+                              className="h-8 text-xs"
+                              min="0"
+                            />
+                          </div>
+                        </div>
+                        {tournee.servicePickup && (
+                          <p className="text-[10px] text-muted-foreground">
+                            Actuel: {tournee.servicePickup.location} à {tournee.servicePickup.time} ({tournee.servicePickup.kmFromBase} km)
+                          </p>
+                        )}
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Heure</Label>
-                        <Input
-                          type="time"
-                          value={servicePickupTime}
-                          onChange={(e) => setServicePickupTime(e.target.value)}
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Distance (km)</Label>
-                        <Input
-                          type="number"
-                          value={servicePickupKm}
-                          onChange={(e) => setServicePickupKm(e.target.value)}
-                          placeholder="0"
-                          className="h-8 text-xs"
-                          min="0"
-                        />
-                      </div>
-                    </div>
-                    {tournee.servicePickup && (
-                      <p className="text-[10px] text-muted-foreground">
-                        Actuel: {tournee.servicePickup.location} à {tournee.servicePickup.time} ({tournee.servicePickup.kmFromBase} km)
-                      </p>
                     )}
                   </div>
                 </>

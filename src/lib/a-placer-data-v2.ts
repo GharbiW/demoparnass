@@ -114,25 +114,27 @@ const prestations: Prestation[] = [];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRESTATION 2: Repetitive Ma-Ve (2 days) - SANOFI - Sensitive ADR SUP
+// 4 courses per day × 2 days = 8 courses total
 // ═══════════════════════════════════════════════════════════════════════════════
 {
   const startLoc = "CDG Hub";
   const endLoc = "Port de Marseille";
-  const intermediateLoc = "Entrepôt Avignon";
+  const intermediateLoc1 = "Entrepôt Avignon";
+  const intermediateLoc2 = "Entrepôt Avignon";
   const days = [2, 5]; // Tue, Fri
   const dates = getDatesForDays(days);
   const courses: Course[] = [];
   dates.forEach((date, dayIdx) => {
-    // 2 courses per day (A->B then B->C)
+    // 4 courses per day (A→B, B→C, C→B, B→D)
     courses.push({
-      id: `CRS-002-${dayIdx * 2 + 1}`,
+      id: `CRS-002-${dayIdx * 4 + 1}`,
       rideId: 'RIDE-002-A',
       prestationId: 'PRE-2024-002',
       date: format(date, 'yyyy-MM-dd'),
       startTime: '06:00',
       endTime: '09:00',
       startLocation: startLoc,
-      endLocation: intermediateLoc,
+      endLocation: intermediateLoc1,
       assignmentStatus: 'non_affectee',
       isSensitive: true,
       requiredVehicleType: 'ADR',
@@ -143,13 +145,49 @@ const prestations: Prestation[] = [];
       missingResource: 'driver',
     });
     courses.push({
-      id: `CRS-002-${dayIdx * 2 + 2}`,
+      id: `CRS-002-${dayIdx * 4 + 2}`,
       rideId: 'RIDE-002-B',
       prestationId: 'PRE-2024-002',
       date: format(date, 'yyyy-MM-dd'),
       startTime: '09:30',
       endTime: '12:00',
-      startLocation: intermediateLoc,
+      startLocation: intermediateLoc1,
+      endLocation: endLoc,
+      assignmentStatus: 'non_affectee',
+      isSensitive: true,
+      requiredVehicleType: 'ADR',
+      requiredVehicleEnergy: 'Diesel',
+      requiredDriverType: 'CM',
+      requiredDriverSkills: ['ADR'],
+      nonPlacementReason: 'sup_client_existant',
+      missingResource: 'driver',
+    });
+    courses.push({
+      id: `CRS-002-${dayIdx * 4 + 3}`,
+      rideId: 'RIDE-002-C',
+      prestationId: 'PRE-2024-002',
+      date: format(date, 'yyyy-MM-dd'),
+      startTime: '13:00',
+      endTime: '16:00',
+      startLocation: startLoc,
+      endLocation: intermediateLoc2,
+      assignmentStatus: 'non_affectee',
+      isSensitive: true,
+      requiredVehicleType: 'ADR',
+      requiredVehicleEnergy: 'Diesel',
+      requiredDriverType: 'CM',
+      requiredDriverSkills: ['ADR'],
+      nonPlacementReason: 'sup_client_existant',
+      missingResource: 'driver',
+    });
+    courses.push({
+      id: `CRS-002-${dayIdx * 4 + 4}`,
+      rideId: 'RIDE-002-D',
+      prestationId: 'PRE-2024-002',
+      date: format(date, 'yyyy-MM-dd'),
+      startTime: '16:30',
+      endTime: '19:00',
+      startLocation: intermediateLoc2,
       endLocation: endLoc,
       assignmentStatus: 'non_affectee',
       isSensitive: true,

@@ -54,6 +54,7 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [useExternalProvider, setUseExternalProvider] = useState(false);
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
+  const [allowAssignmentWithoutVehicle, setAllowAssignmentWithoutVehicle] = useState(false);
 
   useEffect(() => {
     if (course) {
@@ -63,6 +64,7 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
       setAllowOverride(false);
       setUseExternalProvider(false);
       setSelectedProviderId('');
+      setAllowAssignmentWithoutVehicle(false);
     }
   }, [course]);
 
@@ -79,12 +81,32 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
   }, [vehicles, course]);
 
   const validation = useMemo(() => {
-    if (!course || !selectedDriverId || !selectedVehicleId) return null;
+    if (!course || !selectedDriverId) return null;
     const driver = drivers.find(d => d.id === selectedDriverId);
+    if (!driver) return null;
+    
+    // If vehicle is not selected and assignment without vehicle is allowed, skip vehicle validation
+    if (!selectedVehicleId && allowAssignmentWithoutVehicle) {
+      // Return a minimal validation result for driver-only assignment
+      return {
+        valid: true,
+        errors: [],
+        warnings: ['Assignation sans véhicule - le véhicule devra être assigné ultérieurement'],
+        compatibility: {
+          driverCompatible: true,
+          driverIssues: [],
+          vehicleCompatible: false,
+          vehicleIssues: ['Véhicule non sélectionné'],
+          overallCompatible: true,
+        },
+      };
+    }
+    
+    if (!selectedVehicleId) return null;
     const vehicle = vehicles.find(v => v.vin === selectedVehicleId);
-    if (!driver || !vehicle) return null;
+    if (!vehicle) return null;
     return validateAssignment(course, vehicle, driver, trips, weeklyAssignments);
-  }, [course, selectedDriverId, selectedVehicleId, drivers, vehicles, trips]);
+  }, [course, selectedDriverId, selectedVehicleId, drivers, vehicles, trips, allowAssignmentWithoutVehicle]);
 
   const weeklyCount = useMemo(() => {
     if (!course || !selectedDriverId) return null;
@@ -154,8 +176,14 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
       return;
     }
 
-    if (!selectedDriverId || !selectedVehicleId) {
-      toast({ variant: "destructive", title: "Sélection incomplète", description: "Veuillez sélectionner un chauffeur et un véhicule." });
+    if (!selectedDriverId) {
+      toast({ variant: "destructive", title: "Sélection incomplète", description: "Veuillez sélectionner un conducteur." });
+      return;
+    }
+    
+    // If assignment without vehicle is not allowed, require vehicle
+    if (!allowAssignmentWithoutVehicle && !selectedVehicleId) {
+      toast({ variant: "destructive", title: "Sélection incomplète", description: "Veuillez sélectionner un véhicule ou activer l'option 'Forcer l'affectation sans véhicule'." });
       return;
     }
     if (validation && !validation.valid && validation.errors.length > 0 && !allowOverride) {
@@ -164,8 +192,14 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
     }
     setIsSubmitting(true);
     await new Promise(resolve => setTimeout(resolve, 500));
-    onAssign(course.id, selectedDriverId, selectedVehicleId);
-    toast({ title: "Assignation réussie", description: `La course a été assignée avec succès.` });
+    // Pass empty string for vehicleId if no vehicle is selected
+    onAssign(course.id, selectedDriverId, selectedVehicleId || '');
+    toast({ 
+      title: "Assignation réussie", 
+      description: selectedVehicleId 
+        ? `La course a été assignée avec succès.` 
+        : `La course a été assignée au conducteur. Le véhicule devra être assigné ultérieurement.` 
+    });
     setIsSubmitting(false);
     onOpenChange(false);
   };
@@ -225,6 +259,12 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
                 <Truck className="h-2 w-2 sm:h-2.5 sm:w-2.5" />
                 {course.requiredVehicleType}
               </span>
+              {course.requiredVehicleEnergy && (
+                <span className="text-[9px] sm:text-[10px] text-muted-foreground bg-card rounded-full px-1.5 sm:px-2 py-0.5 border inline-flex items-center gap-0.5">
+                  <Zap className="h-2 w-2 sm:h-2.5 sm:w-2.5" />
+                  {course.requiredVehicleEnergy}
+                </span>
+              )}
               {course.requiredDriverType && (
                 <span className="text-[9px] sm:text-[10px] text-muted-foreground bg-card rounded-full px-1.5 sm:px-2 py-0.5 border inline-flex items-center gap-0.5">
                   <User className="h-2 w-2 sm:h-2.5 sm:w-2.5" />
@@ -341,25 +381,6 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
 
             <Separator />
 
-            {/* External Provider Toggle */}
-            <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-lg border bg-muted/30">
-              <div className="flex items-center gap-2">
-                <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-600" />
-                <div>
-                  <p className="text-[10px] sm:text-xs font-medium">Prestataire externe</p>
-                  <p className="text-[9px] sm:text-[10px] text-muted-foreground">Confier à un sous-traitant</p>
-                </div>
-              </div>
-              <Switch
-                checked={useExternalProvider}
-                onCheckedChange={(val) => {
-                  setUseExternalProvider(val);
-                  if (val) { setSelectedDriverId(''); setSelectedVehicleId(''); }
-                  else { setSelectedProviderId(''); }
-                }}
-              />
-            </div>
-
             {useExternalProvider ? (
               /* External Provider Selection */
               <div>
@@ -405,11 +426,11 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <Label htmlFor="driver-select" className="text-[10px] sm:text-xs font-medium mb-1 sm:mb-1.5 block">
-                    Chauffeur <span className="text-destructive">*</span>
+                    Conducteur <span className="text-destructive">*</span>
                   </Label>
                   <Select value={selectedDriverId} onValueChange={setSelectedDriverId}>
                     <SelectTrigger id="driver-select" className="h-8 sm:h-9 text-xs sm:text-sm">
-                      <SelectValue placeholder="Sélectionner un chauffeur" />
+                      <SelectValue placeholder="Sélectionner un conducteur" />
                     </SelectTrigger>
                     <SelectContent>
                       {compatibleDrivers.map(driver => (
@@ -440,13 +461,14 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
 
                 <div>
                   <Label htmlFor="vehicle-select" className="text-[10px] sm:text-xs font-medium mb-1 sm:mb-1.5 block">
-                    Véhicule <span className="text-destructive">*</span>
+                    Véhicule {!allowAssignmentWithoutVehicle && <span className="text-destructive">*</span>}
                   </Label>
                   <Select value={selectedVehicleId} onValueChange={setSelectedVehicleId}>
                     <SelectTrigger id="vehicle-select" className="h-8 sm:h-9 text-xs sm:text-sm">
-                      <SelectValue placeholder="Sélectionner un véhicule" />
+                      <SelectValue placeholder={allowAssignmentWithoutVehicle ? "Sélectionner un véhicule (optionnel)" : "Sélectionner un véhicule"} />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="">Aucun véhicule (affectation forcée)</SelectItem>
                       {compatibleVehicles.map(vehicle => (
                         <SelectItem key={vehicle.vin} value={vehicle.vin}>
                           <div className="flex items-center gap-2">
@@ -457,6 +479,14 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
                       ))}
                     </SelectContent>
                   </Select>
+                  {allowAssignmentWithoutVehicle && !selectedVehicleId && (
+                    <div className="mt-1.5 p-2 rounded-lg border border-amber-200 bg-amber-50/50">
+                      <p className="text-[9px] sm:text-[10px] text-amber-700 flex items-center gap-1">
+                        <AlertTriangle className="h-2.5 w-2.5 flex-shrink-0" />
+                        Affectation sans véhicule activée - le véhicule devra être assigné ultérieurement
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -545,7 +575,7 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
                       <div className="flex items-center gap-1 sm:gap-1.5 mb-0.5 sm:mb-1">
                         <User className="h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0" />
                         <span className="text-[10px] sm:text-xs font-medium truncate">
-                          {validation.compatibility.driverCompatible ? "Chauffeur compatible" : "Chauffeur incompatible"}
+                          {validation.compatibility.driverCompatible ? "Conducteur compatible" : "Conducteur incompatible"}
                         </span>
                       </div>
                       {validation.compatibility.driverIssues.length > 0 && (
@@ -558,6 +588,56 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
             )}
             </>
             )}
+
+            <Separator />
+
+            {/* Force Assignment Without Vehicle Toggle */}
+            {!useExternalProvider && (
+              <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-lg border bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-600" />
+                  <div>
+                    <p className="text-[10px] sm:text-xs font-medium">Forcer l&apos;affectation sans véhicule</p>
+                    <p className="text-[9px] sm:text-[10px] text-muted-foreground">Permet d&apos;affecter uniquement le conducteur</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={allowAssignmentWithoutVehicle}
+                  onCheckedChange={(val) => {
+                    setAllowAssignmentWithoutVehicle(val);
+                    if (val) {
+                      // When enabling, clear vehicle selection
+                      setSelectedVehicleId('');
+                    }
+                  }}
+                />
+              </div>
+            )}
+
+            <Separator />
+
+            {/* External Provider Toggle — last option */}
+            <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-lg border bg-muted/30">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-600" />
+                <div>
+                  <p className="text-[10px] sm:text-xs font-medium">Prestataire externe</p>
+                  <p className="text-[9px] sm:text-[10px] text-muted-foreground">Confier à un sous-traitant</p>
+                </div>
+              </div>
+              <Switch
+                checked={useExternalProvider}
+                onCheckedChange={(val) => {
+                  setUseExternalProvider(val);
+                  if (val) { 
+                    setSelectedDriverId(''); 
+                    setSelectedVehicleId(''); 
+                    setAllowAssignmentWithoutVehicle(false);
+                  }
+                  else { setSelectedProviderId(''); }
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -568,7 +648,11 @@ export function AssignCourseDialog({ course, open, onOpenChange, onAssign }: Ass
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={useExternalProvider ? !selectedProviderId || isSubmitting : !selectedDriverId || !selectedVehicleId || isSubmitting}
+            disabled={
+              useExternalProvider 
+                ? !selectedProviderId || isSubmitting 
+                : !selectedDriverId || (!allowAssignmentWithoutVehicle && !selectedVehicleId) || isSubmitting
+            }
             size="sm"
             className="gap-1 sm:gap-1.5 text-[10px] sm:text-xs h-7 sm:h-8"
           >

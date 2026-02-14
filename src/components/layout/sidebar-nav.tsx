@@ -66,12 +66,12 @@ const conceptionMenuItems = [
     { href: '/conception/planning', label: 'Planning Global', icon: GanttChartSquare },
     { href: '/conception/a-placer', label: 'À Placer', icon: ClipboardList },
     { href: '/conception/courses', label: 'Courses', icon: Route },
-    { href: '/conception/sup', label: 'Créer un SUP', icon: CalendarCheck },
+    { href: '/conception/sup', label: 'Créer un SUP', icon: CalendarCheck, disabled: true },
     { href: '/conception/conducteurs', label: 'Conducteurs', icon: Users2 },
     { href: '/conception/vehicules', label: 'Véhicules', icon: Truck },
-    { href: '/conception/sous-traitants', label: 'Sous-traitants', icon: Building },
-    { href: '/conception/alertes', label: 'Règles d\'alertes', icon: AlertTriangle },
-    { href: '/conception/import', label: 'Import données', icon: FileText },
+    { href: '/conception/sous-traitants', label: 'Sous-traitants', icon: Building, disabled: true },
+    { href: '/conception/alertes', label: 'Règles d\'alertes', icon: AlertTriangle, disabled: true },
+    { href: '/conception/import', label: 'Import données', icon: FileText, disabled: true },
     { href: '/conception/reporting', label: 'Reporting', icon: LayoutDashboard },
 ]
 
@@ -173,11 +173,17 @@ export function SidebarNav() {
                         <AccordionTrigger className="p-2 hover:no-underline text-sm font-semibold text-sidebar-foreground/70 hover:text-sidebar-foreground">Conception</AccordionTrigger>
                         <AccordionContent className="pb-0 pl-4">
                             <SidebarMenu>
-                                {conceptionMenuItems.map(({ href, label, icon: Icon }) => (
+                                {conceptionMenuItems.map(({ href, label, icon: Icon, disabled }) => (
                                     <SidebarMenuItem key={href}>
-                                        <SidebarMenuButton asChild isActive={isActive(href)} size="sm">
-                                            <Link href={href}>{Icon && <Icon className="h-4 w-4 mr-2" />}{label}</Link>
-                                        </SidebarMenuButton>
+                                        {disabled ? (
+                                            <SidebarMenuButton disabled size="sm" className="opacity-50 cursor-not-allowed">
+                                                {Icon && <Icon className="h-4 w-4 mr-2" />}{label}
+                                            </SidebarMenuButton>
+                                        ) : (
+                                            <SidebarMenuButton asChild isActive={isActive(href)} size="sm">
+                                                <Link href={href}>{Icon && <Icon className="h-4 w-4 mr-2" />}{label}</Link>
+                                            </SidebarMenuButton>
+                                        )}
                                     </SidebarMenuItem>
                                 ))}
                             </SidebarMenu>

@@ -116,7 +116,7 @@ function CourseItem({
   return (
     <div
       className={cn(
-        "relative rounded-xl border p-4 transition-all duration-200",
+        "relative rounded-lg border px-3 py-2 transition-all duration-200",
         isAssigned
           ? "bg-emerald-50/50 border-emerald-200 opacity-70"
           : isSelected
@@ -124,13 +124,13 @@ function CourseItem({
           : "bg-card border-border hover:border-muted-foreground/30 hover:shadow-sm"
       )}
     >
-      {/* Selection indicator */}
-      <div className="flex items-start gap-3">
+      {/* Compact single-row layout */}
+      <div className="flex items-center gap-2">
         <button
           onClick={(e) => { e.stopPropagation(); onToggle(); }}
           disabled={isAssigned}
           className={cn(
-            "mt-0.5 flex-shrink-0 h-5 w-5 rounded-md border-2 flex items-center justify-center transition-colors",
+            "flex-shrink-0 h-4 w-4 rounded border-2 flex items-center justify-center transition-colors",
             isAssigned
               ? "bg-emerald-500 border-emerald-500"
               : isSelected
@@ -138,64 +138,40 @@ function CourseItem({
               : "border-muted-foreground/30 hover:border-primary/60"
           )}
         >
-          {(isSelected || isAssigned) && <Check className="h-3 w-3 text-white" />}
+          {(isSelected || isAssigned) && <Check className="h-2.5 w-2.5 text-white" />}
         </button>
 
-        <div className="flex-1 min-w-0">
-          {/* Course header */}
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-muted-foreground">{course.id}</span>
-              {course.isSensitive && (
-                <Badge className="text-[10px] px-1.5 py-0 h-4 bg-red-100 text-red-700 border-red-200 hover:bg-red-100">
-                  <Shield className="h-2.5 w-2.5 mr-0.5" /> Sensible
-                </Badge>
-              )}
-              {isAssigned && (
-                <Badge className="text-[10px] px-1.5 py-0 h-4 bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100">
-                  <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" /> Affectée
-                </Badge>
-              )}
-            </div>
-            {!isAssigned && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                onClick={(e) => { e.stopPropagation(); onAssign(); }}
-              >
-                Affecter
-              </Button>
+        <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+          {/* Course ID + Sensitive */}
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[10px] font-mono text-muted-foreground">{course.id}</span>
+            {course.isSensitive && (
+              <Shield className="h-3 w-3 text-rose-500" />
+            )}
+            {isAssigned && (
+              <CheckCircle2 className="h-3 w-3 text-emerald-500" />
             )}
           </div>
 
-          {/* Trajet */}
-          <div className="mb-3">
-            <TrajetTimeline course={course} />
-          </div>
+          {/* Date */}
+          <span className="text-[10px] text-muted-foreground bg-muted/60 rounded px-1.5 py-0.5 shrink-0">
+            {format(new Date(course.date), "EEE d MMM", { locale: fr })}
+          </span>
 
-          {/* Meta row */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted/60 rounded-full px-2.5 py-1">
-              <Calendar className="h-3 w-3" />
-              {format(new Date(course.date), "EEE d MMMM", { locale: fr })}
-            </div>
-            <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted/60 rounded-full px-2.5 py-1">
-              <Clock className="h-3 w-3" />
-              {course.startTime} — {course.endTime}
-            </div>
-            <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted/60 rounded-full px-2.5 py-1">
-              <Truck className="h-3 w-3" />
-              {course.requiredVehicleType}
-            </div>
-            {course.requiredDriverSkills.length > 0 && course.requiredDriverSkills.map(skill => (
-              <Badge key={skill} variant="outline" className="text-[10px] px-1.5 py-0 h-5 font-normal">
-                {skill}
-              </Badge>
-            ))}
+          {/* Time */}
+          <span className="text-[10px] text-muted-foreground shrink-0">
+            {course.startTime}–{course.endTime}
+          </span>
+
+          {/* Route compact */}
+          <div className="flex items-center gap-0.5 min-w-0 flex-1">
+            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+            <span className="text-[10px] truncate max-w-[80px]">{course.startLocation}</span>
+            <ArrowRight className="h-2.5 w-2.5 text-muted-foreground/40 shrink-0" />
+            <div className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+            <span className="text-[10px] truncate max-w-[80px]">{course.endLocation}</span>
             {isMultiStop && (
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 font-normal">
-                <MapPin className="h-2.5 w-2.5 mr-0.5" />
+              <Badge variant="secondary" className="text-[8px] px-1 py-0 h-3 ml-0.5">
                 {locations.length} stops
               </Badge>
             )}
@@ -203,20 +179,32 @@ function CourseItem({
 
           {/* Missing resources */}
           {course.missingResource && !isAssigned && (
-            <div className="flex items-center gap-2 mt-2">
+            <div className="flex items-center gap-1 shrink-0">
               {(course.missingResource === 'vehicle' || course.missingResource === 'both') && (
-                <div className="flex items-center gap-1 text-[11px] text-red-600 bg-red-50 rounded-full px-2 py-0.5 border border-red-200">
-                  <Truck className="h-3 w-3" /> Véhicule manquant
+                <div className="flex items-center gap-0.5 text-[9px] text-red-600 bg-red-50 rounded px-1 py-0.5 border border-red-200">
+                  <Truck className="h-2.5 w-2.5" />
                 </div>
               )}
               {(course.missingResource === 'driver' || course.missingResource === 'both') && (
-                <div className="flex items-center gap-1 text-[11px] text-red-600 bg-red-50 rounded-full px-2 py-0.5 border border-red-200">
-                  <User className="h-3 w-3" /> Conducteur manquant
+                <div className="flex items-center gap-0.5 text-[9px] text-red-600 bg-red-50 rounded px-1 py-0.5 border border-red-200">
+                  <User className="h-2.5 w-2.5" />
                 </div>
               )}
             </div>
           )}
         </div>
+
+        {/* Assign button */}
+        {!isAssigned && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-[10px] px-2 shrink-0"
+            onClick={(e) => { e.stopPropagation(); onAssign(); }}
+          >
+            Affecter
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -362,7 +350,7 @@ export function PrestationDrawer({ prestation, open, onOpenChange, onAssign }: P
 
           {/* Courses list */}
           <ScrollArea className="flex-1">
-            <div className="px-6 py-4 space-y-3">
+            <div className="px-6 py-3 space-y-1.5">
               {prestation.courses.map((course, index) => {
                 const isAssigned = course.assignmentStatus === 'affectee';
                 return (

@@ -36,6 +36,7 @@ interface AdvancedFiltersProps {
   availableClients: string[];
   availableVehicles: Array<{ vin: string; immatriculation: string; type: string }>;
   availableDrivers: Array<{ id: string; name: string; type: string }>;
+  availableServicePickupLocations?: string[];
   onReset: () => void;
 }
 
@@ -60,6 +61,7 @@ export function AdvancedFiltersPanel({
   availableClients,
   availableVehicles,
   availableDrivers,
+  availableServicePickupLocations = [],
   onReset,
 }: AdvancedFiltersProps) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -191,6 +193,24 @@ export function AdvancedFiltersPanel({
                   {availableDrivers.map((d) => (
                     <SelectItem key={d.id} value={d.id}>
                       {d.name} ({d.type})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Lieu prise de service */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Lieu prise de service</Label>
+              <Select value={filters.servicePickupLocation} onValueChange={(v) => updateFilter("servicePickupLocation", v)}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Tous lieux" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous lieux</SelectItem>
+                  {availableServicePickupLocations.map((loc) => (
+                    <SelectItem key={loc} value={loc}>
+                      {loc}
                     </SelectItem>
                   ))}
                 </SelectContent>

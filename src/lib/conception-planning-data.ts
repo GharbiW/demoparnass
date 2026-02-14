@@ -1,7 +1,7 @@
 import { Course, Tournee, PlanningHealthMetrics, PlanningVersion } from './types';
 import { drivers } from './planning-data';
 import { vehicles as allVehicleDetails } from './vehicles-data';
-import { addDays, addWeeks, format, startOfWeek, addHours, addMinutes } from 'date-fns';
+import { addDays, addWeeks, format, startOfWeek } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
 const sample = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -30,18 +30,168 @@ function getLocation(site: string): string {
 }
 
 const vehicleTypes: Course['requiredVehicleType'][] = ['Semi-remorque', 'Caisse mobile', 'Frigo', 'ADR', 'SPL', 'VL'];
-const driverTypes: ('CM' | 'Polyvalent' | 'SPL' | 'VL')[] = ['CM', 'Polyvalent', 'SPL', 'VL'];
 const energies: ('Diesel' | 'Gaz' | 'Électrique')[] = ['Diesel', 'Gaz', 'Électrique'];
 
 // Base date for planning (use current week's Monday so data is visible immediately)
 const now = new Date();
 const planningBaseDate = startOfWeek(now, { weekStartsOn: 1 });
 
+// ─── Helper: format minutes to HH:mm ────────────────────────────────────────
+function minToTime(m: number): string {
+  const h = Math.floor(m / 60) % 24;
+  const mins = m % 60;
+  return `${String(h).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+// Get named active drivers for variety (ensure different named drivers in rows)
+const activeDrivers = drivers.filter(d => d.status === 'Actif');
+const namedDrivers = activeDrivers.slice(0, Math.min(activeDrivers.length, 15));
+const availableVehicles = allVehicleDetails.filter(v => v.statut === 'Disponible' || v.statut === 'En mission');
+
+// ─── Scenario Templates ─────────────────────────────────────────────────────
+// Each scenario produces one tournée with sequential courses
+
+interface ScenarioTemplate {
+  tag: string; // label for debugging
+  coursesCount: number;
+  startMinute: number; // first course starts at this minute of day
+  durations: number[]; // duration in minutes for each course
+  gaps: number[]; // transit gap in minutes between courses (length = coursesCount - 1)
+  vehicleType: Course['requiredVehicleType'];
+  energy: 'Diesel' | 'Gaz' | 'Électrique';
+  driverType: 'CM' | 'Polyvalent' | 'SPL' | 'VL';
+  clients: string[];
+  assigned: boolean;
+  isSup: boolean;
+  isSensitive: boolean;
+  skills: ('ADR' | 'Aéroportuaire' | 'Habilitation sûreté')[];
+  nonPlacementReason?: Course['nonPlacementReason'];
+  missingResource?: 'vehicle' | 'driver' | 'both';
+  hasComments: boolean;
+}
+
+// 14 diverse scenario templates — rotated & varied per day
+const scenarioTemplates: ScenarioTemplate[] = [
+  // 1. Standard morning: 2 courses, single driver, Caisse mobile
+  {
+    tag: 'morning-standard',
+    coursesCount: 2, startMinute: 6 * 60, durations: [150, 120], gaps: [25],
+    vehicleType: 'Caisse mobile', energy: 'Diesel', driverType: 'CM',
+    clients: ['CARREFOUR', 'LECLERC'], assigned: true, isSup: false, isSensitive: false,
+    skills: [], hasComments: false,
+  },
+  // 2. Full day 3 courses, Semi-remorque
+  {
+    tag: 'fullday-3courses',
+    coursesCount: 3, startMinute: 5 * 60 + 30, durations: [180, 150, 120], gaps: [30, 25],
+    vehicleType: 'Semi-remorque', energy: 'Diesel', driverType: 'CM',
+    clients: ['AMAZON', 'NESTLE', 'SANOFI'], assigned: true, isSup: false, isSensitive: false,
+    skills: [], hasComments: true,
+  },
+  // 3. Long dual-driver tournée (>8h total, 4 courses)
+  {
+    tag: 'dual-driver-long',
+    coursesCount: 4, startMinute: 4 * 60 + 30, durations: [150, 120, 150, 120], gaps: [20, 30, 20],
+    vehicleType: 'Semi-remorque', energy: 'Diesel', driverType: 'SPL',
+    clients: ['MICHELIN', 'DANONE', 'AIRBUS', 'LVMH'], assigned: true, isSup: false, isSensitive: false,
+    skills: [], hasComments: true,
+  },
+  // 4. Short single delivery (VL, quick)
+  {
+    tag: 'single-quick',
+    coursesCount: 1, startMinute: 9 * 60, durations: [90], gaps: [],
+    vehicleType: 'VL', energy: 'Électrique', driverType: 'VL',
+    clients: ['DASSAULT'], assigned: true, isSup: false, isSensitive: false,
+    skills: [], hasComments: false,
+  },
+  // 5. Afternoon Frigo tournée
+  {
+    tag: 'afternoon-frigo',
+    coursesCount: 2, startMinute: 13 * 60 + 30, durations: [180, 150], gaps: [20],
+    vehicleType: 'Frigo', energy: 'Diesel', driverType: 'CM',
+    clients: ['LACTALIS', 'DANONE'], assigned: true, isSup: false, isSensitive: false,
+    skills: [], hasComments: false,
+  },
+  // 6. SUP urgent (1 course)
+  {
+    tag: 'sup-urgent',
+    coursesCount: 1, startMinute: 10 * 60 + 15, durations: [120], gaps: [],
+    vehicleType: 'Caisse mobile', energy: 'Gaz', driverType: 'Polyvalent',
+    clients: ['INTERMARCHE'], assigned: true, isSup: true, isSensitive: false,
+    skills: [], hasComments: true,
+  },
+  // 7. Sensitive ADR tournée (2 courses)
+  {
+    tag: 'sensitive-adr',
+    coursesCount: 2, startMinute: 7 * 60, durations: [150, 180], gaps: [30],
+    vehicleType: 'ADR', energy: 'Diesel', driverType: 'SPL',
+    clients: ['SAFRAN', 'AIRBUS'], assigned: true, isSup: false, isSensitive: true,
+    skills: ['ADR'], hasComments: true,
+  },
+  // 8. Unassigned — driver absent (2 courses)
+  {
+    tag: 'unassigned-driver',
+    coursesCount: 2, startMinute: 8 * 60, durations: [120, 120], gaps: [20],
+    vehicleType: 'Semi-remorque', energy: 'Diesel', driverType: 'CM',
+    clients: ['SYSTEME U', 'SODEXO'], assigned: false, isSup: false, isSensitive: false,
+    skills: [], nonPlacementReason: 'conducteur_absent', missingResource: 'driver', hasComments: false,
+  },
+  // 9. Unassigned — vehicle unavailable (1 course)
+  {
+    tag: 'unassigned-vehicle',
+    coursesCount: 1, startMinute: 11 * 60, durations: [150], gaps: [],
+    vehicleType: 'Frigo', energy: 'Gaz', driverType: 'CM',
+    clients: ['PROCTER & GAMBLE'], assigned: false, isSup: false, isSensitive: false,
+    skills: [], nonPlacementReason: 'materiel_indisponible', missingResource: 'vehicle', hasComments: false,
+  },
+  // 10. Early bird SPL tournée (04:00 start, 3 courses)
+  {
+    tag: 'earlybird-spl',
+    coursesCount: 3, startMinute: 4 * 60, durations: [120, 90, 120], gaps: [20, 15],
+    vehicleType: 'SPL', energy: 'Diesel', driverType: 'SPL',
+    clients: ['AMAZON', 'CARREFOUR', 'LECLERC'], assigned: true, isSup: false, isSensitive: false,
+    skills: [], hasComments: false,
+  },
+  // 11. SUP + sensitive (2 courses, mixed)
+  {
+    tag: 'sup-sensitive-mix',
+    coursesCount: 2, startMinute: 15 * 60, durations: [120, 90], gaps: [25],
+    vehicleType: 'Caisse mobile', energy: 'Diesel', driverType: 'Polyvalent',
+    clients: ['LVMH', 'SAFRAN'], assigned: true, isSup: true, isSensitive: true,
+    skills: ['Habilitation sûreté'], hasComments: true,
+  },
+  // 12. Unassigned — both missing (SUP, 1 course)
+  {
+    tag: 'unassigned-both',
+    coursesCount: 1, startMinute: 12 * 60, durations: [90], gaps: [],
+    vehicleType: 'VL', energy: 'Électrique', driverType: 'VL',
+    clients: ['NESTLE'], assigned: false, isSup: true, isSensitive: false,
+    skills: [], nonPlacementReason: 'sup_client_existant', missingResource: 'both', hasComments: false,
+  },
+  // 13. Evening tournée (2 courses, late)
+  {
+    tag: 'evening-tournee',
+    coursesCount: 2, startMinute: 17 * 60, durations: [120, 90], gaps: [20],
+    vehicleType: 'Caisse mobile', energy: 'Gaz', driverType: 'CM',
+    clients: ['SODEXO', 'INTERMARCHE'], assigned: true, isSup: false, isSensitive: false,
+    skills: [], hasComments: false,
+  },
+  // 14. Dual-driver short (2 courses, borderline 8h)
+  {
+    tag: 'dual-driver-short',
+    coursesCount: 3, startMinute: 6 * 60 + 30, durations: [180, 150, 180], gaps: [25, 30],
+    vehicleType: 'Semi-remorque', energy: 'Diesel', driverType: 'CM',
+    clients: ['MICHELIN', 'LECLERC', 'CARREFOUR'], assigned: true, isSup: false, isSensitive: false,
+    skills: [], hasComments: false,
+  },
+];
+
 // ─── Generate Courses for Planning ──────────────────────────────────────────
 
 function generatePlanningCourses(): Course[] {
   const courses: Course[] = [];
   let courseIdx = 1;
+  let tourneeCounter = 1;
 
   // Generate for current week + next week (Mon-Sat × 2 weeks)
   for (let dayOffset = 0; dayOffset < 12; dayOffset++) {
@@ -50,96 +200,133 @@ function generatePlanningCourses(): Course[] {
     if (dayDate.getDay() === 0) continue;
     const dateStr = format(dayDate, 'yyyy-MM-dd');
 
-    // Generate 15-25 courses per day
-    const coursesPerDay = 15 + Math.floor(Math.random() * 11);
+    // Shuffle scenarios and pick 10-14 per day for variety (but always include diverse types)
+    const dayScenarios = [...scenarioTemplates];
+    // Shuffle using Fisher-Yates
+    for (let i = dayScenarios.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [dayScenarios[i], dayScenarios[j]] = [dayScenarios[j], dayScenarios[i]];
+    }
 
-    for (let c = 0; c < coursesPerDay; c++) {
-      const startSite = sample(sites);
-      const endSite = sample(sites.filter(s => s !== startSite));
-      const startLoc = getLocation(startSite);
-      const endLoc = getLocation(endSite);
+    // Use 10-13 scenarios per day (some days busier)
+    const scenarioCount = 10 + (dayOffset % 4);
+    const selectedScenarios = dayScenarios.slice(0, Math.min(scenarioCount, dayScenarios.length));
 
-      const startHour = 4 + Math.floor(Math.random() * 14); // 04:00 - 18:00
-      const duration = 2 + Math.floor(Math.random() * 6); // 2-7 hours
-      const endHour = Math.min(startHour + duration, 23);
-      const startMin = sample([0, 15, 30, 45]);
-      const endMin = sample([0, 15, 30, 45]);
+    // Slightly vary start times per day so data looks different each day
+    const dayTimeOffset = (dayOffset * 7) % 30; // shift 0-29 min
 
-      const vehicleType = sample(vehicleTypes);
-      const driverType = vehicleType === 'SPL' ? 'SPL' : (vehicleType === 'VL' ? 'VL' : sample(['CM', 'Polyvalent'] as const));
-      const isSup = Math.random() > 0.85;
-      const isSensitive = Math.random() > 0.9;
-      const isAssigned = Math.random() > 0.3; // 70% assigned
+    // Track which driver index to use to spread drivers across tournées
+    let driverIdx = dayOffset % namedDrivers.length;
 
-      const skills: ('ADR' | 'Aéroportuaire' | 'Habilitation sûreté')[] = [];
-      if (vehicleType === 'ADR') skills.push('ADR');
-      if (Math.random() > 0.85) skills.push('Aéroportuaire');
+    selectedScenarios.forEach((scenario, scenIdx) => {
+      const tourneeId = `T-${String(tourneeCounter).padStart(3, '0')}`;
+      const tCode = tourneeId;
+      tourneeCounter++;
 
-      // Add intermediate locations for multi-destination (10% of courses)
-      const intermediateLocations: string[] = [];
-      if (Math.random() > 0.9) {
-        const midSite = sample(sites.filter(s => s !== startSite && s !== endSite));
-        intermediateLocations.push(getLocation(midSite));
+      // Pick a different site for each scenario
+      const siteIdx = (scenIdx + dayOffset) % sites.length;
+      const startSite = sites[siteIdx];
+
+      // Assign driver & vehicle (or not, based on scenario)
+      const driver = scenario.assigned ? namedDrivers[driverIdx % namedDrivers.length] : undefined;
+      driverIdx++;
+      const vehicle = scenario.assigned ? availableVehicles[(scenIdx + dayOffset * 3) % availableVehicles.length] : undefined;
+
+      // Build courses sequentially
+      let currentMin = scenario.startMinute + dayTimeOffset;
+
+      for (let ci = 0; ci < scenario.coursesCount; ci++) {
+        const duration = scenario.durations[ci] || 120;
+        const endMin = Math.min(currentMin + duration, 23 * 60 + 45);
+
+        const endSiteIdx = (siteIdx + ci + 1) % sites.length;
+        const endSite = sites[endSiteIdx];
+
+        // Specific adjustments for variety
+        const thisSensitive = scenario.isSensitive;
+        const thisClient = scenario.clients[ci % scenario.clients.length];
+
+        courses.push({
+          id: `CRS-PL-${String(courseIdx).padStart(4, '0')}`,
+          rideId: `RIDE-PL-${String(courseIdx).padStart(4, '0')}`,
+          prestationId: `PRE-PL-${String(courseIdx).padStart(3, '0')}`,
+          date: dateStr,
+          startTime: minToTime(currentMin),
+          endTime: minToTime(endMin),
+          startLocation: getLocation(startSite),
+          endLocation: getLocation(endSite),
+          assignmentStatus: scenario.assigned ? 'affectee' : 'non_affectee',
+          assignedDriverId: driver?.id,
+          assignedDriverName: driver?.name,
+          assignedVehicleId: vehicle?.vin,
+          assignedVehicleImmat: vehicle?.immatriculation,
+          tourneeId: scenario.assigned ? tourneeId : undefined,
+          tourneeNumber: scenario.assigned ? `Tour ${tCode.replace('T-', '')}` : undefined,
+          isSensitive: thisSensitive,
+          requiredVehicleType: scenario.vehicleType,
+          requiredVehicleEnergy: scenario.energy,
+          requiredDriverType: scenario.driverType,
+          requiredDriverSkills: [...scenario.skills],
+          nonPlacementReason: scenario.assigned
+            ? 'nouvelle_prestation_reguliere'
+            : (scenario.nonPlacementReason || 'nouvelle_prestation_reguliere'),
+          missingResource: scenario.assigned ? undefined : scenario.missingResource,
+          client: thisClient,
+          prestationType: scenario.isSup ? 'sup' : 'régulière',
+          loadingCode: Math.random() > 0.6 ? `LC-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}` : undefined,
+          comments: scenario.hasComments ? [{
+            id: `CMT-${courseIdx}`,
+            text: sample([
+              'Client exige ponctualité absolue',
+              'Accès restreint - badge requis',
+              'Chargement par l\'arrière uniquement',
+              'Température contrôlée requise',
+              'Livraison avant 14h impérative',
+              'Client fermé le weekend',
+            ]),
+            author: sample(['J. Kader', 'S. Jawad', 'M. Dupont']),
+            timestamp: new Date().toISOString(),
+          }] : undefined,
+        });
+
+        courseIdx++;
+
+        // Move to next course start: end + transit gap
+        const gap = scenario.gaps[ci] || 20;
+        currentMin = endMin + gap;
       }
+    });
 
-      const assignedDriver = isAssigned ? sample(drivers.filter(d => d.status === 'Actif')) : undefined;
-      const assignedVehicle = isAssigned ? sample(allVehicleDetails.filter(v => v.statut === 'Disponible' || v.statut === 'En mission')) : undefined;
-
-      const client = sample(clients);
-      const prestationId = `PRE-PL-${String(courseIdx).padStart(3, '0')}`;
-      const tourneeId = isAssigned ? `T-${String(Math.floor(courseIdx / 3) + 1).padStart(3, '0')}` : undefined;
+    // Also add 2-4 extra standalone unassigned courses (no tournée) for "À Placer" variety
+    const extraUnassigned = 2 + (dayOffset % 3);
+    for (let eu = 0; eu < extraUnassigned; eu++) {
+      const startH = 6 + Math.floor(Math.random() * 12);
+      const dur = 90 + Math.floor(Math.random() * 120);
+      const vt = sample(vehicleTypes);
+      const dt = vt === 'SPL' ? 'SPL' as const : vt === 'VL' ? 'VL' as const : sample(['CM', 'Polyvalent'] as const);
 
       courses.push({
         id: `CRS-PL-${String(courseIdx).padStart(4, '0')}`,
         rideId: `RIDE-PL-${String(courseIdx).padStart(4, '0')}`,
-        prestationId,
+        prestationId: `PRE-PL-${String(courseIdx).padStart(3, '0')}`,
         date: dateStr,
-        startTime: `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`,
-        endTime: `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`,
-        startLocation: startLoc,
-        endLocation: endLoc,
-        intermediateLocations: intermediateLocations.length > 0 ? intermediateLocations : undefined,
-        assignmentStatus: isAssigned ? 'affectee' : 'non_affectee',
-        assignedDriverId: assignedDriver?.id,
-        assignedDriverName: assignedDriver?.name,
-        assignedVehicleId: assignedVehicle?.vin,
-        assignedVehicleImmat: assignedVehicle?.immatriculation,
-        tourneeId,
-        tourneeNumber: tourneeId ? `Tour ${tourneeId.replace('T-', '')}` : undefined,
-        isSensitive,
-        requiredVehicleType: vehicleType,
+        startTime: minToTime(startH * 60 + sample([0, 15, 30])),
+        endTime: minToTime(Math.min(startH * 60 + dur, 23 * 60 + 45)),
+        startLocation: getLocation(sample(sites)),
+        endLocation: getLocation(sample(sites)),
+        assignmentStatus: 'non_affectee',
+        isSensitive: eu === 0,
+        requiredVehicleType: vt,
         requiredVehicleEnergy: sample(energies),
-        requiredDriverType: driverType,
-        requiredDriverSkills: skills,
-        nonPlacementReason: isAssigned ? 'nouvelle_prestation_reguliere' : sample([
-          'nouvelle_prestation_reguliere',
-          'conducteur_absent',
-          'materiel_indisponible',
-          'prestation_modifiee',
-          'tournee_cassee',
-          'sup_client_existant',
+        requiredDriverType: dt,
+        requiredDriverSkills: vt === 'ADR' ? ['ADR'] : [],
+        nonPlacementReason: sample([
+          'conducteur_absent', 'materiel_indisponible', 'tournee_cassee', 'prestation_modifiee',
         ] as const),
-        missingResource: isAssigned ? undefined : sample(['vehicle', 'driver', 'both'] as const),
-        client,
-        prestationType: isSup ? 'sup' : 'régulière',
-        // Some courses have loading codes
-        loadingCode: Math.random() > 0.7 ? `LC-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}` : undefined,
-        // Some courses have comments
-        comments: Math.random() > 0.8 ? [{
-          id: `CMT-${courseIdx}`,
-          text: sample([
-            'Client exige ponctualité absolue',
-            'Accès restreint - badge requis',
-            'Chargement par l\'arrière uniquement',
-            'Température contrôlée requise',
-            'Livraison avant 14h impérative',
-            'Client fermé le weekend',
-          ]),
-          author: sample(['J. Kader', 'S. Jawad', 'M. Dupont']),
-          timestamp: new Date().toISOString(),
-        }] : undefined,
+        missingResource: sample(['vehicle', 'driver', 'both'] as const),
+        client: sample(clients),
+        prestationType: eu === 0 ? 'sup' : 'régulière',
       });
-
       courseIdx++;
     }
   }
@@ -166,7 +353,7 @@ function generateTournees(): Tournee[] {
   // First, group assigned courses with tourneeId
   const assignedCourses = planningCourses.filter(c => c.tourneeId);
   assignedCourses.forEach(c => {
-    const key = `${c.tourneeId}-${c.date}`;
+    const key = `${c.tourneeId}|${c.date}`;
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key)!.push(c);
   });
@@ -182,51 +369,43 @@ function generateTournees(): Tournee[] {
   let tourneeIndex = 1;
   const siteTourneeCounts = new Map<string, number>();
 
-  // Determine which tourneeIds will be dual-driver (~20%, with at least 3 guaranteed per visible day)
+  // Determine which tourneeIds will be dual-driver
+  // Rule: Use 2 conducteurs when total trajet duration > 8 hours
   const allTourneeKeys = Array.from(grouped.keys());
 
-  // Sort keys so that keys with the most courses and with assigned drivers come first
-  // This ensures the "guaranteed" dual-driver tournées are viable ones
-  const viableKeys = allTourneeKeys.filter(key => {
-    const courses = grouped.get(key)!;
-    return courses.length >= 2 && !!courses[0].assignedDriverId;
-  });
+  // Helper function to calculate total duration in hours
+  const calculateTotalDuration = (courses: Course[]): number => {
+    if (courses.length === 0) return 0;
+    const sorted = courses.sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const firstStart = timeToMinutes(sorted[0].startTime);
+    const lastEnd = timeToMinutes(sorted[sorted.length - 1].endTime);
+    // Handle midnight crossing
+    const duration = lastEnd >= firstStart 
+      ? (lastEnd - firstStart) / 60 
+      : ((24 * 60 - firstStart) + lastEnd) / 60;
+    return duration;
+  };
 
-  // Group viable keys by date to ensure each visible day has dual-driver examples
-  const viableByDate = new Map<string, string[]>();
-  viableKeys.forEach(key => {
-    const courses = grouped.get(key)!;
-    const date = courses[0].date;
-    if (!viableByDate.has(date)) viableByDate.set(date, []);
-    viableByDate.get(date)!.push(key);
-  });
+  // Helper function to convert time string to minutes
+  function timeToMinutes(time: string): number {
+    const [h, m] = time.split(":").map(Number);
+    return h * 60 + m;
+  }
 
-  // Guarantee at least 3 dual-driver tournées per day (when viable keys available)
-  const guaranteedDualDriver = new Set<string>();
-  viableByDate.forEach((keys) => {
-    const count = Math.min(3, keys.length);
-    for (let i = 0; i < count; i++) {
-      guaranteedDualDriver.add(keys[i]);
-    }
-  });
-
-  // Add random ~15% from the rest
-  const dualDriverCandidates = new Set(guaranteedDualDriver);
+  // Determine dual-driver based on duration > 8 hours
+  const dualDriverKeys = new Set<string>();
   allTourneeKeys.forEach(key => {
-    if (!dualDriverCandidates.has(key) && Math.random() < 0.15) {
-      const courses = grouped.get(key)!;
-      if (courses.length >= 2 && !!courses[0].assignedDriverId) {
-        dualDriverCandidates.add(key);
+    const courses = grouped.get(key)!;
+    if (courses.length >= 2 && !!courses[0].assignedDriverId) {
+      const totalDuration = calculateTotalDuration(courses);
+      if (totalDuration > 8) {
+        dualDriverKeys.add(key);
       }
     }
   });
 
-  const dualDriverKeys = dualDriverCandidates;
-
   grouped.forEach((courses, key) => {
-    const [tourneeId, date] = key.split('-').length > 3
-      ? [key.substring(0, key.lastIndexOf('-', key.lastIndexOf('-') - 1)), key.substring(key.lastIndexOf('-', key.lastIndexOf('-') - 1) + 1)]
-      : [key.split('-').slice(0, 2).join('-'), key.split('-').slice(2).join('-')];
+    const [tourneeId] = key.split('|');
 
     const firstCourse = courses[0];
     const vehicle = firstCourse.assignedVehicleId ? allVehicleDetails.find(v => v.vin === firstCourse.assignedVehicleId) : undefined;
@@ -237,15 +416,22 @@ function generateTournees(): Tournee[] {
     siteTourneeCounts.set(site, siteTourneeCounts.get(site)! + 1);
     const tourneeCode = generateTourneeCode(site, siteTourneeCounts.get(site)!);
 
-    // Generate service pickup for some tournees (70% have service pickup)
-    const hasServicePickup = Math.random() > 0.3;
-    const servicePickup = hasServicePickup ? {
+    // Always generate service pickup — positioned 15-30 min before the first course
+    const sortedForPickup = [...courses].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const firstCourseStart = sortedForPickup[0].startTime;
+    const [fh, fm] = firstCourseStart.split(':').map(Number);
+    const firstMin = fh * 60 + fm;
+    const pickupOffset = 15 + Math.floor(Math.random() * 16); // 15-30 min before
+    const pickupMin = Math.max(0, firstMin - pickupOffset);
+    const pickupH = Math.floor(pickupMin / 60);
+    const pickupM = pickupMin % 60;
+    const servicePickup = {
       location: getLocation(site),
-      time: `${String(5 + Math.floor(Math.random() * 2)).padStart(2, '0')}:${sample([0, 15, 30])}`,
+      time: `${String(pickupH).padStart(2, '0')}:${String(pickupM).padStart(2, '0')}`,
       kmFromBase: 5 + Math.floor(Math.random() * 20), // 5-25 km from base
-    } : undefined;
+    };
 
-    // Dual-driver (12h tour) support — ~15% of assigned tournées
+    // Dual-driver support — use 2 conducteurs when total trajet duration > 8 hours
     const isDualDriver = dualDriverKeys.has(key) && courses.length >= 2 && !!firstCourse.assignedDriverId;
     let driver2: typeof drivers[0] | undefined;
     if (isDualDriver) {

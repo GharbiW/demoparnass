@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, memo } from "react";
 import { Course, Tournee } from "@/lib/types";
 import {
   Table,
@@ -174,6 +174,65 @@ function aggregateCourses(courses: Course[]): AggregatedRow[] {
   return rows;
 }
 
+// ─── CDC Compliance Helpers ──────────────────────────────────────────────────
+
+type CDCAlert = {
+  type: 'energy_mismatch' | 'vehicle_type_mismatch' | 'driver_skill_missing';
+  message: string;
+  severity: 'warning' | 'error';
+};
+
+function checkCDCCompliance(course: Course, tournee?: Tournee): CDCAlert[] {
+  const alerts: CDCAlert[] = [];
+
+  // Energy mismatch: required energy vs assigned vehicle energy
+  if (course.requiredVehicleEnergy && tournee?.vehicleEnergy) {
+    if (course.requiredVehicleEnergy !== tournee.vehicleEnergy) {
+      alerts.push({
+        type: 'energy_mismatch',
+        message: `Énergie requise: ${course.requiredVehicleEnergy}, véhicule: ${tournee.vehicleEnergy}`,
+        severity: 'warning',
+      });
+    }
+  }
+
+  // Vehicle type mismatch: required type vs assigned vehicle type
+  if (course.requiredVehicleType && tournee?.vehicleType) {
+    const normalizeType = (t: string) => t === 'Caisse mobile' ? 'CM' : t;
+    if (normalizeType(course.requiredVehicleType) !== normalizeType(tournee.vehicleType)) {
+      alerts.push({
+        type: 'vehicle_type_mismatch',
+        message: `Type véhicule requis: ${course.requiredVehicleType}, affecté: ${tournee.vehicleType}`,
+        severity: 'error',
+      });
+    }
+  }
+
+  // Driver skill requirements not met
+  if (course.requiredDriverSkills.length > 0 && course.assignedDriverId) {
+    // In a real scenario, check driver's actual skills
+    // For now, flag if the course requires special skills
+    if (course.constraintWarnings && course.constraintWarnings.length > 0) {
+      alerts.push({
+        type: 'driver_skill_missing',
+        message: course.constraintWarnings.join(', '),
+        severity: 'warning',
+      });
+    }
+  }
+
+  return alerts;
+}
+
+/** Abbreviate vehicle types for compact display */
+function abbreviateVehicleType(type: string): string {
+  switch (type) {
+    case 'Caisse mobile': return 'CM';
+    case 'Semi-remorque': return 'SPL';
+    default: return type;
+  }
+}
+
 // ─── Status indicator dot ───────────────────────────────────────────────────
 
 function StatusDot({ status }: { status: Course["assignmentStatus"] }) {
@@ -259,7 +318,7 @@ function TourneeGroupHeader({
               <span className="text-xs font-semibold text-slate-700">
                 {group.vehicleImmat}
                 {group.vehicleType && (
-                  <span className="font-normal text-muted-foreground ml-1">({group.vehicleType})</span>
+                  <span className="font-normal text-muted-foreground ml-1">({abbreviateVehicleType(group.vehicleType)})</span>
                 )}
               </span>
             ) : (
@@ -400,7 +459,7 @@ function VehicleGroupHeader({
           {/* Vehicle details */}
           {group.vehicleType && (
             <Badge variant="secondary" className="text-[9px] h-4 bg-slate-100">
-              {group.vehicleType}
+              {abbreviateVehicleType(group.vehicleType)}
             </Badge>
           )}
           {group.vehicleEnergy && (
@@ -602,6 +661,9 @@ function CourseRow({
   const isUnassigned = course.assignmentStatus === "non_affectee";
   const isPartial = course.assignmentStatus === "partiellement_affectee";
 
+  // CDC Compliance checks
+  const cdcAlerts = useMemo(() => checkCDCCompliance(course, group.tournee), [course, group.tournee]);
+
   return (
     <TableRow
       key={row.isAggregated ? `agg-${course.startLocation}-${course.endLocation}-${course.startTime}-${course.driverSlot || "A"}` : course.id}
@@ -720,9 +782,35 @@ function CourseRow({
 
       {/* Vehicle type */}
       <TableCell className="py-1.5 px-2">
-        <Badge variant="secondary" className="text-[9px] h-4 px-1.5 bg-slate-100 text-slate-600">
-          {course.requiredVehicleType}
-        </Badge>
+        <div className="flex items-center gap-1">
+          <Badge variant="secondary" className="text-[9px] h-4 px-1.5 bg-slate-100 text-slate-600">
+            {abbreviateVehicleType(course.requiredVehicleType)}
+          </Badge>
+          {/* CDC compliance alerts */}
+          {cdcAlerts.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger>
+                <Badge variant="destructive" className="text-[8px] h-3.5 px-1 gap-0.5">
+                  <AlertTriangle className="h-2.5 w-2.5" />
+                  {cdcAlerts.length}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs text-xs">
+                <div className="space-y-1">
+                  <p className="font-semibold text-rose-600">Alertes CDC</p>
+                  {cdcAlerts.map((alert, i) => (
+                    <p key={i} className={cn(
+                      "text-xs",
+                      alert.severity === 'error' ? "text-rose-600" : "text-amber-600"
+                    )}>
+                      • {alert.message}
+                    </p>
+                  ))}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </TableCell>
 
       {/* Energy */}
