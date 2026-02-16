@@ -1,0 +1,31 @@
+-- Commercial Module: Storage Bucket for Avatars
+-- Creates a public storage bucket for client and contact avatars
+--
+-- IMPORTANT: Storage buckets cannot be created via SQL in Supabase
+-- You must create this bucket through the Supabase Dashboard:
+--
+-- 1. Go to Supabase Dashboard > Storage
+-- 2. Click "New bucket"
+-- 3. Set the following:
+--    - Name: commercial-avatars
+--    - Public bucket: YES (checked)
+--    - File size limit: 5242880 (5MB)
+--    - Allowed MIME types: image/jpeg, image/jpg, image/png, image/webp, image/gif
+--
+-- OR use the Supabase Management API with service role key:
+--
+-- POST https://<project-ref>.supabase.co/storage/v1/bucket
+-- Headers:
+--   Authorization: Bearer <SERVICE_ROLE_KEY>
+--   apikey: <SERVICE_ROLE_KEY>
+--   Content-Type: application/json
+-- Body:
+-- {
+--   "id": "commercial-avatars",
+--   "name": "commercial-avatars",
+--   "public": true,
+--   "file_size_limit": 5242880,
+--   "allowed_mime_types": ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]
+-- }
+--
+-- This SQL file is kept for documentation purposes only.
